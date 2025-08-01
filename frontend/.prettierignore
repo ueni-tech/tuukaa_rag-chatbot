@@ -1,0 +1,18 @@
+# ビルド成果物
+.next/
+out/
+dist/
+build/
+node_modules/
+
+# 最小化ファイル
+*.min.js
+*.min.css
+
+# 設定ファイル
+package-lock.json
+yarn.lock
+
+# その他
+coverage/
+*.log

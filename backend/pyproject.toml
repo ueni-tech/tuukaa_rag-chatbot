@@ -1,0 +1,47 @@
+[tool.poetry]
+name = "lpknowledge-api"
+version = "0.1.0"
+description = "LPナレッジ検索API - RAGベースのQ&Aシステム（フェーズ1から継承）"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+# FastAPI関連（フェーズ2で追加）
+fastapi = "^0.104.1"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+python-multipart = "^0.0.6"
+pydantic-settings = "^2.1.0"
+# フェーズ1から継承（LangChain関連）- 完全に同じバージョン
+langchain = "^0.3.25"
+langchain-community = "^0.3.25"
+langchain-openai = "^0.3.22"
+langchain-chroma = "^0.2.4"
+# フェーズ1から継承（その他）- 完全に同じバージョン
+python-dotenv = "^1.0.1"
+tiktoken = "^0.9.0"
+chromadb = "^1.0.12"
+# フェーズ1から継承（Streamlit - 将来の比較用に残しておく）
+streamlit = "^1.32.0"
+
+[tool.poetry.group.dev.dependencies]
+pypdf = "^4.0.0"
+pytest-asyncio = "^0.23.0"
+black = "^24.0.0"
+flake8 = "^7.0.0"
+# FastAPI開発用に追加（ChromaDBとの互換性を考慮）
+httpx = "^0.27.0"
+mypy = "^1.7.1"
+isort = "^5.12.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88

@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  api:
+    build: 
+      context: ./backend  # ← 変更：. から ./backend に
+      args:
+        INSTALL_DEV: "true"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app:cached  # ← 変更：./ から ./backend に
+      - vectorstore:/app/vectorstore
+      - uploads:/app/uploads
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ALLOW_RESET=true
+      - DEBUG=true
+      - APP_NAME=LPナレッジ検索API
+      - APP_VERSION=0.1.0
+      - PERSIST_DIRECTORY=/app/vectorstore
+      - UPLOAD_DIRECTORY=/app/uploads
+    stdin_open: true
+    tty: true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  vectorstore:
+  uploads:
