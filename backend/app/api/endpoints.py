@@ -42,7 +42,7 @@ async def upload_document(
     # NOTE
     # Depends(get_rag_engine) と書くと、FastAPI がリクエストごとに get_rag_engine() を呼び出し、
     # 新しい RAGEngine を生成・提供する
-    rag_engin: RAGEngine = Depends(get_rag_engine),
+    rag_engine: RAGEngine = Depends(get_rag_engine),
 ) -> UploadResponse:
     """PDF文書のアップロードとベクトルストア構築
     Args:
@@ -92,7 +92,7 @@ async def upload_document(
 
         # ベクトルストアを構築
         logger.info(f"ベクトルストア構築開始: {len(chunks)}チャンク")
-        vectorstore_info = await rag_engin.create_vectorstore_from_chunks(chunks)
+        vectorstore_info = await rag_engine.create_vectorstore_from_chunks(chunks)
 
         token_count = document_processor.count_tokens(text)
 

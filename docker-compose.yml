@@ -2,17 +2,17 @@ version: "3.9"
 
 services:
   api:
-    build: 
-      context: ./backend  # ← 変更：. から ./backend に
+    build:
+      context: ./backend # ← 変更：. から ./backend に
       args:
         INSTALL_DEV: "true"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app:cached  # ← 変更：./ から ./backend に
-      - vectorstore:/app/vectorstore
-      - uploads:/app/uploads
+      - ./backend:/app:cached
+      - ./backend/vectorstore:/app/vectorstore # バインドマウントに変更
+      - ./backend/uploads:/app/uploads # バインドマウントに変更
     environment:
       - PYTHONPATH=/app
       - OPENAI_API_KEY=${OPENAI_API_KEY}
