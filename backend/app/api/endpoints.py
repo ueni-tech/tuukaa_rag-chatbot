@@ -11,7 +11,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-from ..core.document_processor import DocumentProcessor
 from ..core.rag_engine import RAGEngine
 from ..core.dependencies import (
     get_rag_engine,
@@ -27,11 +26,18 @@ from ..models.schemas import (
 )
 
 
+from ..domains.pdf.service import (
+    ingest_pdf_to_vectorstore,
+    ask_question as service_ask_question,
+    search_documents as service_search_documents,
+    get_system_info as service_get_system_info,
+    reset_system as service_reset_system,
+)
+
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-document_processor = DocumentProcessor()
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -61,47 +67,27 @@ async def upload_document(
         )
 
     max_size = 10 * 1024 * 1024  # 10MB
+    temp_file_path: Path | None = None
 
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             content = await file.read()
-
             if len(content) > max_size:
                 raise HTTPException(
                     status_code=413, detail="ファイルサイズが10MBを超えています"
                 )
-
             temp_file.write(content)
             temp_file_path = Path(temp_file.name)
 
-        # PDFの処理
         logger.info(f"PDF処理開始: {file.filename}")
-        text = await document_processor.extract_text_form_pdf(temp_file_path)
-
-        if not text.strip():
-            raise HTTPException(
-                status_code=400, detail="PDFからテキストを抽出できませんでした"
-            )
-
-        chunks = document_processor.split_text(text)
-
-        if not chunks:
-            raise HTTPException(
-                status_code=400, detail="テキストをチャンクに分割できませんでした"
-            )
-
-        # ベクトルストアを構築
-        logger.info(f"ベクトルストア構築開始: {len(chunks)}チャンク")
-        vectorstore_info = await rag_engine.create_vectorstore_from_chunks(chunks)
-
-        token_count = document_processor.count_tokens(text)
+        ingest_info = await ingest_pdf_to_vectorstore(temp_file_path, rag_engine)
 
         file_info = {
             "filename": file.filename,
             "file_size": len(content),
-            "text_length": len(text),
-            "chunk_count": len(chunks),
-            "estimated_tokens": token_count,
+            "text_length": ingest_info["text_length"],
+            "chunk_count": ingest_info["chunk_count"],
+            "estimated_tokens": ingest_info["estimated_tokens"],
         }
 
         logger.info(f"PDF処理完了: {file.filename}")
@@ -110,7 +96,7 @@ async def upload_document(
             status="success",
             message=f"ファイル '{file.filename}'の処理が完了しました",
             file_info=file_info,
-            vectorstore_info=vectorstore_info,
+            vectorstore_info=ingest_info["vectorstore_info"],
         )
     except HTTPException:
         raise
@@ -121,7 +107,7 @@ async def upload_document(
         )
     finally:
         try:
-            if "temp_file_path" in locals():
+            if temp_file_path and temp_file_path.exists():
                 temp_file_path.unlink()
         except Exception:
             pass
@@ -143,7 +129,7 @@ async def ask_question(
         HTTPException: 処理エラーの場合
     """
     try:
-        system_info = await rag_engine.get_system_info()
+        system_info = await service_get_system_info(rag_engine)
         if not system_info.get("vectorstore_ready"):
             raise HTTPException(
                 status_code=400, detail="まずPDFファイルをアップロードしてください"
@@ -151,8 +137,8 @@ async def ask_question(
 
         logger.info(f"質問処理開始: {request.question[:50]}...")
 
-        result = await rag_engine.generate_answer(
-            question=request.question, top_k=request.top_k
+        result = await service_ask_question(
+            question=request.question, top_k=request.top_k, rag_engine=rag_engine
         )
 
         logger.info("質問処理完了")
@@ -189,7 +175,7 @@ async def search_documents(
         HTTPException: 処理エラーの場合
     """
     try:
-        system_info = await rag_engine.get_system_info()
+        system_info = await service_get_system_info(rag_engine)
         if not system_info.get("vectorstore_ready"):
             raise HTTPException(
                 status_code=400, detail="まずPDFファイルをアップロードしてください"
@@ -197,8 +183,8 @@ async def search_documents(
 
         logger.info(f"文書検索開始: {request.question[:50]}...")
 
-        documents = await rag_engine.search_documents(
-            query=request.question, top_k=request.top_k
+        documents = await service_search_documents(
+            query=request.question, top_k=request.top_k, rag_engine=rag_engine
         )
 
         document_list = [
@@ -233,7 +219,7 @@ async def get_system_info(
         システム情報
     """
     try:
-        info = await rag_engine.get_system_info()
+        info = await service_get_system_info(rag_engine)
 
         return SystemInfoResponse(
             status=info["status"],
@@ -265,7 +251,7 @@ async def reset_system(
     """
     try:
         logger.info("システムリセット開始")
-        result = await rag_engine.reset_vectorstore()
+        result = await service_reset_system(rag_engine)
         logger.info("システムリセット完了")
 
         return result
