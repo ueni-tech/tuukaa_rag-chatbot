@@ -1,7 +1,7 @@
-
 ## クイックスタート
 
 ### 1. 環境設定
+
 ```bash
 # プロジェクトのクローン
 git clone <repository-url>
@@ -16,6 +16,7 @@ EOF
 ```
 
 ### 2. サービス起動（Docker Compose）
+
 ```bash
 # フルスタックアプリケーションを一括起動
 docker-compose up --build
@@ -25,19 +26,22 @@ docker-compose up -d --build
 ```
 
 ### 3. 動作確認
-- **メインアプリ**: http://localhost:3000（Next.jsフロントエンド）
-- **API文書**: http://localhost:8000/docs（FastAPI Swagger）
+
+- **メインアプリ**: http://localhost:3000（Next.js フロントエンド）
+- **API 文書**: http://localhost:8000/docs（FastAPI Swagger）
 - **ヘルスチェック**: http://localhost:8000/health（バックエンド状態）
 
 ## 使用方法（各フェーズの比較）
 
-### フェーズ1（Streamlit UI）
+### フェーズ 1（Streamlit UI）
+
 ```bash
 # ブラウザでシンプルなUI操作
 # http://localhost:8501
 ```
 
-### フェーズ2（REST API）
+### フェーズ 2（REST API）
+
 ```bash
 # curlコマンドによるAPI操作
 curl -X POST "http://localhost:8000/api/v1/upload" \
@@ -48,7 +52,8 @@ curl -X POST "http://localhost:8000/api/v1/ask" \
   -d '{"question": "命名規則は？"}'
 ```
 
-### フェーズ3（Webアプリケーション）
+### フェーズ 3（Web アプリケーション）
+
 ```bash
 # モダンなWebブラウザUI
 # http://localhost:3000
@@ -61,6 +66,7 @@ curl -X POST "http://localhost:8000/api/v1/ask" \
 ## 技術スタック
 
 ### フロントエンド
+
 - **フレームワーク**: Next.js 15.4.5（App Router）
 - **言語**: TypeScript 5
 - **スタイリング**: Tailwind CSS 4
@@ -68,15 +74,17 @@ curl -X POST "http://localhost:8000/api/v1/ask" \
 - **ビルドツール**: Turbopack
 
 ### バックエンド
+
 - **フレームワーク**: FastAPI 0.104.1
 - **言語**: Python 3.11
 - **AI/ML**: LangChain 0.3.25 + OpenAI
-- **ベクトルDB**: ChromaDB 1.0.12
+- **ベクトル DB**: ChromaDB 1.0.12
 - **開発環境**: Poetry + Black + isort
 
 ### インフラ・DevOps
+
 - **コンテナ**: Docker + Docker Compose
-- **リバースプロキシ**: 将来的にNginx対応予定
+- **リバースプロキシ**: 将来的に Nginx 対応予定
 - **環境管理**: .env + pydantic-settings
 
 ## 開発者向け情報
@@ -84,6 +92,7 @@ curl -X POST "http://localhost:8000/api/v1/ask" \
 ### ローカル開発（個別起動）
 
 #### フロントエンド開発
+
 ```bash
 cd frontend
 npm install
@@ -94,15 +103,17 @@ npm run type-check   # TypeScript型チェック
 ```
 
 #### バックエンド開発
+
 ```bash
 cd backend
 poetry install
 poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Docker開発環境
+### Docker 開発環境
 
 #### ログ確認
+
 ```bash
 # 全サービスのログ
 docker-compose logs -f
@@ -113,6 +124,7 @@ docker-compose logs -f backend
 ```
 
 #### デバッグ
+
 ```bash
 # フロントエンドコンテナにアクセス
 docker-compose exec frontend sh
@@ -122,46 +134,51 @@ docker-compose exec backend bash
 ```
 
 #### ホットリロード
-- **フロントエンド**: ファイル保存で自動リロード（Next.js開発サーバー）
+
+- **フロントエンド**: ファイル保存で自動リロード（Next.js 開発サーバー）
 - **バックエンド**: ファイル保存で自動再起動（uvicorn --reload）
 
-## 継承機能（フェーズ1・2から）
+## 継承機能（フェーズ 1・2 から）
 
 ### 完全継承される機能
-- ✅ PDF文書処理（PyPDF2）
-- ✅ RAG処理（LangChain + OpenAI）
-- ✅ ベクトルストア（ChromaDB永続化）
+
+- ✅ PDF 文書処理（PyPDF2）
+- ✅ RAG 処理（LangChain + OpenAI）
+- ✅ ベクトルストア（ChromaDB 永続化）
 - ✅ REST API（全エンドポイント）
-- ✅ Docker環境（マルチコンテナ対応）
+- ✅ Docker 環境（マルチコンテナ対応）
 
-### 新機能（フェーズ3で追加）
-- 🆕 モダンWebUI（Next.js + TypeScript）
+### 新機能（フェーズ 3 で追加）
+
+- 🆕 モダン WebUI（Next.js + TypeScript）
 - 🆕 レスポンシブデザイン（モバイル対応）
-- 🆕 リアルタイムUI更新
+- 🆕 リアルタイム UI 更新
 - 🆕 型安全なフロントエンド開発
-- 🆕 本格的なWebアプリケーション体験
+- 🆕 本格的な Web アプリケーション体験
 
-## API仕様（フェーズ2互換）
+## API 仕様（フェーズ 2 互換）
 
-フェーズ2のREST APIは完全に互換性を保持：
+フェーズ 2 の REST API は完全に互換性を保持：
 
 ### エンドポイント一覧
-- `POST /api/v1/upload` - PDF文書アップロード
+
+- `POST /api/v1/upload` - PDF 文書アップロード
 - `POST /api/v1/ask` - 質問・回答生成
 - `POST /api/v1/search` - 文書検索のみ
 - `GET /api/v1/system/info` - システム情報取得
 - `GET /health` - ヘルスチェック
 
 ### 利用例
+
 ```javascript
 // フロントエンドからのAPI呼び出し例
-const response = await fetch('/api/v1/ask', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+const response = await fetch("/api/v1/ask", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    question: 'クラスの命名規則は？',
-    top_k: 3
-  })
+    question: "クラスの命名規則は？",
+    top_k: 3,
+  }),
 });
 const data = await response.json();
 ```
@@ -169,11 +186,13 @@ const data = await response.json();
 ## デプロイメント
 
 ### 開発環境
+
 ```bash
 docker-compose up --build
 ```
 
 ### 本番環境（予定）
+
 ```bash
 # 本番ビルド
 docker-compose -f docker-compose.prod.yml up --build
@@ -184,6 +203,7 @@ docker-compose -f docker-compose.prod.yml up --build
 ```
 
 ## プロジェクト構造
+
 ```
 tuukaa/
 ├── frontend/ # Next.jsフロントエンド
@@ -202,7 +222,6 @@ tuukaa/
 └── README.md # このファイル
 ```
 
-
 ## 移行ログ（段階移行）
 
 このリポジトリは「最小差分 / アダプタ先行 / ロールバック容易」を前提に段階的に再編しています。
@@ -211,17 +230,17 @@ tuukaa/
   - 追加: `backend/app/domains/{pdf,lp,embed}/`、`backend/app/core/{prompts,vector}/`、`backend/app/common/`
   - 追加: `frontend/src/app/(apps)/{pdf,lp,embed-admin}/`、`frontend/public/embed.js`
   - 既存の import / ルーティングに変更なし
-- STEP 2: PDFドメインの薄いアダプタ追加
+- STEP 2: PDF ドメインの薄いアダプタ追加
   - `domains/pdf/service.py` に既存 `DocumentProcessor` / `RAGEngine` を薄く呼ぶ関数を定義
   - API は未差し替え（振る舞い互換を担保）
-- STEP 3: APIルーターの分離①（PDFの `/upload` のみ移譲）
+- STEP 3: API ルーターの分離 ①（PDF の `/upload` のみ移譲）
   - 追加: `backend/app/api/pdf.py`（`/api/v1/pdf/upload`）
   - 既存エンドポイント `/api/v1/upload` は維持（互換性確保）
 - STEP 5: LP / Embed の空ルーター追加
   - 追加: `backend/app/api/{lp.py, embed.py}`（`/api/v1/lp`、`/api/v1/embed`）
   - いずれも 200 を返す疎通確認用の空ルートのみ
 
-各 STEP は 1コミットに分割しており、`git revert` により個別ロールバック可能です。
+各 STEP は 1 コミットに分割しており、`git revert` により個別ロールバック可能です。
 
 ### 環境変数（.env.sample 推奨）
 
@@ -292,12 +311,12 @@ git log --oneline | head -n 10
 git revert <STEP_3_COMMIT_SHA>
 ```
 
-
 ## トラブルシューティング
 
 ### よくある問題
 
 #### フロントエンドが起動しない
+
 ```bash
 # Node.jsバージョン確認（18以上推奨）
 node --version
@@ -307,7 +326,8 @@ cd frontend && rm -rf node_modules package-lock.json
 npm install
 ```
 
-#### バックエンドAPIに接続できない
+#### バックエンド API に接続できない
+
 ```bash
 # バックエンドサービス状態確認
 curl http://localhost:8000/health
@@ -316,7 +336,8 @@ curl http://localhost:8000/health
 echo $OPENAI_API_KEY
 ```
 
-#### ChromaDBエラー
+#### ChromaDB エラー
+
 ```bash
 # ベクトルストアのリセット
 docker-compose down
@@ -326,4 +347,4 @@ docker-compose up --build
 
 ---
 
-**フェーズ3の特徴**: フルスタックWebアプリケーションとして、エンドユーザーが使いやすいモダンなUIと、堅牢なAPI基盤を両立したシステムです。
+**フェーズ 3 の特徴**: フルスタック Web アプリケーションとして、エンドユーザーが使いやすいモダンな UI と、堅牢な API 基盤を両立したシステムです。

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     port: int = 8000
     workers: int = 1
 
-    openai_api_key: Optional[str] = None
+    openai_api_key: str | None = None
 
     # ベクトルストア設定
     persist_directory: str = "./vectorstore"
@@ -43,13 +43,13 @@ class Settings(BaseSettings):
     upload_directory: str = "./uploads"
 
     # ===== LP Domain (placeholders) =====
-    lp_model: Optional[str] = None
-    lp_tone: Optional[str] = None
+    lp_model: str | None = None
+    lp_tone: str | None = None
     lp_max_tokens: Optional[int] = None
 
     # ===== Embed Domain (placeholders) =====
-    embed_collection_prefix: Optional[str] = None
-    embed_allowed_origins: Optional[str] = "*"
+    embed_collection_prefix: str | None = None
+    embed_allowed_origins: str | None = "*"
 
     class ConfigDict:
         env_file = ".env"

@@ -70,6 +70,8 @@ async def test_generate_answer():
 
 @pytest.mark.asyncio
 async def test_get_system_info():
+    if not config.settings.openai_api_key:
+        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
     engine = RAGEngine()
     await engine.initialize()
     info = await engine.get_system_info()

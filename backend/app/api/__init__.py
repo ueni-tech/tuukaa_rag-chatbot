@@ -15,5 +15,3 @@ router.include_router(legacy_router)
 router.include_router(pdf_router)
 router.include_router(lp_router)
 router.include_router(embed_router)
-
-

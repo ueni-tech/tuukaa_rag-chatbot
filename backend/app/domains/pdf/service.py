@@ -15,7 +15,9 @@ from ...core.rag_engine import RAGEngine
 document_processor = DocumentProcessor()
 
 
-async def ingest_pdf_to_vectorstore(pdf_path: Path, rag_engine: RAGEngine) -> Dict[str, Any]:
+async def ingest_pdf_to_vectorstore(
+    pdf_path: Path, rag_engine: RAGEngine
+) -> Dict[str, Any]:
     """PDF を読み取り、チャンク化してベクトルストアを構築する薄いラッパ。
 
     既存の `DocumentProcessor` と `RAGEngine.create_vectorstore_from_chunks` を利用。
@@ -32,13 +34,17 @@ async def ingest_pdf_to_vectorstore(pdf_path: Path, rag_engine: RAGEngine) -> Di
     }
 
 
-async def ask_question(question: str, top_k: int | None, rag_engine: RAGEngine) -> Dict[str, Any]:
+async def ask_question(
+    question: str, top_k: int | None, rag_engine: RAGEngine
+) -> Dict[str, Any]:
     """質問に対して回答を生成する薄いラッパ。"""
     result = await rag_engine.generate_answer(question=question, top_k=top_k)
     return result
 
 
-async def search_documents(query: str, top_k: int | None, rag_engine: RAGEngine) -> List[Any]:
+async def search_documents(
+    query: str, top_k: int | None, rag_engine: RAGEngine
+) -> List[Any]:
     """関連文書のみ検索する薄いラッパ。"""
     documents = await rag_engine.search_documents(query=query, top_k=top_k)
     return documents
@@ -52,5 +58,3 @@ async def get_system_info(rag_engine: RAGEngine) -> Dict[str, Any]:
 async def reset_system(rag_engine: RAGEngine) -> Dict[str, str]:
     """ベクトルストアのリセットの薄いラッパ。"""
     return await rag_engine.reset_vectorstore()
-
-
