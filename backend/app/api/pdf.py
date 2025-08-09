@@ -12,9 +12,22 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from ..core.dependencies import get_rag_engine
 from ..core.rag_engine import RAGEngine
-from ..models.schemas import UploadResponse
+from ..models.schemas import (
+    UploadResponse,
+    QuestionRequest,
+    AnswerResponse,
+    SearchResponse,
+    SystemInfoResponse,
+    DocumentInfo,
+)
 from ..core.document_processor import DocumentProcessor
-from ..domains.pdf.service import ingest_pdf_to_vectorstore
+from ..domains.pdf.service import (
+    ingest_pdf_to_vectorstore,
+    ask_question as service_ask_question,
+    search_documents as service_search_documents,
+    get_system_info as service_get_system_info,
+    reset_system as service_reset_system,
+)
 
 
 router = APIRouter(prefix="/pdf", tags=["PDF"])
@@ -29,7 +42,9 @@ async def upload_document(
     rag_engine: RAGEngine = Depends(get_rag_engine),
 ) -> UploadResponse:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="PDFファイルのみアップロード可能です")
+        raise HTTPException(
+            status_code=400, detail="PDFファイルのみアップロード可能です"
+        )
 
     max_size = 10 * 1024 * 1024
     temp_file_path: Path | None = None
@@ -37,7 +52,9 @@ async def upload_document(
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             content = await file.read()
             if len(content) > max_size:
-                raise HTTPException(status_code=413, detail="ファイルサイズが10MBを超えています")
+                raise HTTPException(
+                    status_code=413, detail="ファイルサイズが10MBを超えています"
+                )
             temp_file.write(content)
             temp_file_path = Path(temp_file.name)
 
@@ -61,7 +78,9 @@ async def upload_document(
         raise
     except Exception as e:
         logger.error(f"PDF処理エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"ファイル処理中にエラーが発生しました: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"ファイル処理中にエラーが発生しました: {str(e)}"
+        )
     finally:
         try:
             if temp_file_path and temp_file_path.exists():
@@ -70,3 +89,66 @@ async def upload_document(
             pass
 
 
+@router.post("/ask", response_model=AnswerResponse)
+async def ask_question(
+    request: QuestionRequest, rag_engine: RAGEngine = Depends(get_rag_engine)
+) -> AnswerResponse:
+    system_info = await service_get_system_info(rag_engine)
+    if not system_info.get("vectorstore_ready"):
+        raise HTTPException(
+            status_code=400, detail="まずPDFファイルをアップロードしてください"
+        )
+
+    result = await service_ask_question(
+        question=request.question, top_k=request.top_k, rag_engine=rag_engine
+    )
+    return AnswerResponse(
+        answer=result["answer"],
+        question=request.question,
+        documents=result["documents"],
+        context_used=result["context_used"],
+    )
+
+
+@router.post("/search", response_model=SearchResponse)
+async def search_documents(
+    request: QuestionRequest, rag_engine: RAGEngine = Depends(get_rag_engine)
+) -> SearchResponse:
+    system_info = await service_get_system_info(rag_engine)
+    if not system_info.get("vectorstore_ready"):
+        raise HTTPException(
+            status_code=400, detail="まずPDFファイルをアップロードしてください"
+        )
+
+    documents = await service_search_documents(
+        query=request.question, top_k=request.top_k, rag_engine=rag_engine
+    )
+    document_list = [
+        DocumentInfo(content=doc.page_content, metadata=doc.metadata)
+        for doc in documents
+    ]
+    return SearchResponse(
+        documents=document_list, query=request.question, total_found=len(documents)
+    )
+
+
+@router.get("/system/info", response_model=SystemInfoResponse)
+async def get_system_info(
+    rag_engine: RAGEngine = Depends(get_rag_engine),
+) -> SystemInfoResponse:
+    info = await service_get_system_info(rag_engine)
+    return SystemInfoResponse(
+        status=info["status"],
+        embedding_model=info["embedding_model"],
+        llm_model=info["llm_model"],
+        vectorstore_ready=info["vectorstore_ready"],
+        document_count=info.get("document_count"),
+        collection_id=info.get("collection_id"),
+    )
+
+
+@router.post("/system/reset")
+async def reset_system(
+    rag_engine: RAGEngine = Depends(get_rag_engine),
+) -> dict[str, str]:
+    return await service_reset_system(rag_engine)
