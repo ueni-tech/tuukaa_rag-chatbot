@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-from .api.endpoints import router as api_router
+from .api import router as api_router
 from .core.config import settings
 from .core.dependencies import get_rag_engine, initialize_rag_engine
 from .core.rag_engine import RAGEngine

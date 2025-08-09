@@ -203,6 +203,96 @@ tuukaa/
 ```
 
 
+## 移行ログ（段階移行）
+
+このリポジトリは「最小差分 / アダプタ先行 / ロールバック容易」を前提に段階的に再編しています。
+
+- STEP 1: 雛形の追加（ディレクトリと空ファイル）
+  - 追加: `backend/app/domains/{pdf,lp,embed}/`、`backend/app/core/{prompts,vector}/`、`backend/app/common/`
+  - 追加: `frontend/src/app/(apps)/{pdf,lp,embed-admin}/`、`frontend/public/embed.js`
+  - 既存の import / ルーティングに変更なし
+- STEP 2: PDFドメインの薄いアダプタ追加
+  - `domains/pdf/service.py` に既存 `DocumentProcessor` / `RAGEngine` を薄く呼ぶ関数を定義
+  - API は未差し替え（振る舞い互換を担保）
+- STEP 3: APIルーターの分離①（PDFの `/upload` のみ移譲）
+  - 追加: `backend/app/api/pdf.py`（`/api/v1/pdf/upload`）
+  - 既存エンドポイント `/api/v1/upload` は維持（互換性確保）
+- STEP 5: LP / Embed の空ルーター追加
+  - 追加: `backend/app/api/{lp.py, embed.py}`（`/api/v1/lp`、`/api/v1/embed`）
+  - いずれも 200 を返す疎通確認用の空ルートのみ
+
+各 STEP は 1コミットに分割しており、`git revert` により個別ロールバック可能です。
+
+### 環境変数（.env.sample 推奨）
+
+以下を参考にリポジトリ直下に `.env` を作成してください（`.env.sample` は将来の配布対象）。
+
+```env
+# ===== Backend =====
+OPENAI_API_KEY=
+DEBUG=true
+APP_NAME=LPナレッジ検索API
+APP_VERSION=0.1.0
+
+# 永続化ディレクトリ（docker-compose と整合）
+PERSIST_DIRECTORY=/app/vectorstore
+UPLOAD_DIRECTORY=/app/uploads
+
+# 安全な初期化・デバッグ向けフラグ
+ALLOW_RESET=true
+
+# ===== Frontend =====
+# 既存互換: 既存フロント実装が参照
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# 新: 今後は本変数を参照（段階移行）
+NEXT_PUBLIC_API_BASE=http://localhost:8000
+
+# ===== LP Domain (placeholders) =====
+LP_MODEL=
+LP_TONE=
+LP_MAX_TOKENS=
+
+# ===== Embed Domain (placeholders) =====
+EMBED_COLLECTION_PREFIX=
+EMBED_ALLOWED_ORIGINS=*
+```
+
+### 検証手順（Verify）
+
+コンテナ起動後に以下を実行：
+
+```bash
+# 1) 既存互換エンドポイントの確認
+curl -s http://localhost:8000/health | jq .
+curl -s http://localhost:8000/api/v1/system/info | jq .
+
+# 2) 既存のアップロード（互換維持）
+curl -s -X POST "http://localhost:8000/api/v1/upload" \
+  -F "file=@./backend/uploads/sample.pdf" | jq .
+
+# 3) 新ルーター（分離①）のアップロード
+curl -s -X POST "http://localhost:8000/api/v1/pdf/upload" \
+  -F "file=@./backend/uploads/sample.pdf" | jq .
+
+# 4) 空ルーター（LP/Embed）の疎通確認
+curl -s http://localhost:8000/api/v1/lp/ | jq .
+curl -s http://localhost:8000/api/v1/embed/ | jq .
+```
+
+期待値：1) 200, 2) 既存と同様のレスポンス, 3) 2) と同形式のレスポンス, 4) `{ "status": "ok" }`。
+
+### ロールバック手順
+
+各 STEP はコミット単位。`git log --oneline` でメッセージ `STEP X:` を確認し、対象のみ revert します。
+
+```bash
+git log --oneline | head -n 10
+# 例) STEP 3 を取り消す
+git revert <STEP_3_COMMIT_SHA>
+```
+
+
 ## トラブルシューティング
 
 ### よくある問題
