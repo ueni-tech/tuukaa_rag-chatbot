@@ -25,6 +25,8 @@ def patch_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_initialize():
+    if not config.settings.openai_api_key:
+        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
     engine = RAGEngine()
     await engine.initialize()
     assert engine.embeddings is not None
@@ -33,6 +35,8 @@ async def test_initialize():
 
 @pytest.mark.asyncio
 async def test_create_vectorstore_from_chunks():
+    if not config.settings.openai_api_key:
+        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
     engine = RAGEngine()
     await engine.initialize()
     chunks = ["テスト文書1", "テスト文書2"]
@@ -43,6 +47,8 @@ async def test_create_vectorstore_from_chunks():
 
 @pytest.mark.asyncio
 async def test_search_documents():
+    if not config.settings.openai_api_key:
+        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
     engine = RAGEngine()
     await engine.initialize()
     await engine.create_vectorstore_from_chunks(["テスト文書"])
@@ -52,6 +58,8 @@ async def test_search_documents():
 
 @pytest.mark.asyncio
 async def test_generate_answer():
+    if not config.settings.openai_api_key:
+        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
     engine = RAGEngine()
     await engine.initialize()
     await engine.create_vectorstore_from_chunks(["テスト文書"])
@@ -71,6 +79,8 @@ async def test_get_system_info():
 
 @pytest.mark.asyncio
 async def test_reset_vectorstore():
+    if not config.settings.openai_api_key:
+        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
     engine = RAGEngine()
     await engine.initialize()
     await engine.create_vectorstore_from_chunks(["テスト文書"])
