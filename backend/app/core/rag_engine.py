@@ -277,7 +277,7 @@ class RAGEngine:
                 collection = self.vectorstore._collection
                 info.update(
                     {
-                        "collection_id": collection.id,
+                        "collection_id": str(collection.id),
                         "document_count": collection.count(),
                         "vectorstore_ready": True,
                     }
