@@ -12,12 +12,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from ..core.dependencies import get_rag_engine
 from ..core.rag_engine import RAGEngine
-from ..models.schemas import (
+from ..models.schemas import SystemInfoResponse
+from ..domains.pdf.schemas import (
     UploadResponse,
     QuestionRequest,
     AnswerResponse,
     SearchResponse,
-    SystemInfoResponse,
     DocumentInfo,
 )
 from ..core.document_processor import DocumentProcessor
