@@ -43,11 +43,11 @@ docker-compose up -d --build
 ### フェーズ 2（REST API）
 
 ```bash
-# curlコマンドによるAPI操作
-curl -X POST "http://localhost:8000/api/v1/upload" \
+# curlコマンドによるAPI操作（現行ルート）
+curl -X POST "http://localhost:8000/api/v1/pdf/upload" \
   -F "file=@document.pdf"
 
-curl -X POST "http://localhost:8000/api/v1/ask" \
+curl -X POST "http://localhost:8000/api/v1/pdf/ask" \
   -H "Content-Type: application/json" \
   -d '{"question": "命名規則は？"}'
 ```
@@ -156,23 +156,32 @@ docker-compose exec backend bash
 - 🆕 型安全なフロントエンド開発
 - 🆕 本格的な Web アプリケーション体験
 
-## API 仕様（フェーズ 2 互換）
+## API 仕様（現行）
 
-フェーズ 2 の REST API は完全に互換性を保持：
+### エンドポイント一覧（PDF / LP / Embed）
 
-### エンドポイント一覧
+- PDF
+  - `POST /api/v1/pdf/upload` - PDF 文書アップロード
+  - `POST /api/v1/pdf/ask` - 質問・回答生成
+  - `POST /api/v1/pdf/search` - 文書検索のみ
+  - `GET /api/v1/pdf/system/info` - システム情報取得
+  - `POST /api/v1/pdf/system/reset` - ベクトルストアリセット
+- LP（雛形）
+  - `GET /api/v1/lp/`
+  - `POST /api/v1/lp/generate`
+  - `POST /api/v1/lp/proofread`
+- Embed（雛形）
+  - `GET /api/v1/embed/`
+  - `POST /api/v1/embed/ingest`
+  - `POST /api/v1/embed/chat`
 
-- `POST /api/v1/upload` - PDF 文書アップロード
-- `POST /api/v1/ask` - 質問・回答生成
-- `POST /api/v1/search` - 文書検索のみ
-- `GET /api/v1/system/info` - システム情報取得
-- `GET /health` - ヘルスチェック
+既存の `/api/v1/{upload,ask,search}` は廃止済みです。
 
 ### 利用例
 
 ```javascript
 // フロントエンドからのAPI呼び出し例
-const response = await fetch("/api/v1/ask", {
+const response = await fetch("/api/v1/pdf/ask", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -282,24 +291,28 @@ EMBED_ALLOWED_ORIGINS=*
 コンテナ起動後に以下を実行：
 
 ```bash
-# 1) 既存互換エンドポイントの確認
-curl -s http://localhost:8000/health | jq .
-curl -s http://localhost:8000/api/v1/system/info | jq .
+# 1) ヘルス・システム情報
+curl -s http://localhost:8000/health
+curl -s http://localhost:8000/api/v1/pdf/system/info
 
-# 2) 既存のアップロード（互換維持）
-curl -s -X POST "http://localhost:8000/api/v1/upload" \
-  -F "file=@./backend/uploads/sample.pdf" | jq .
-
-# 3) 新ルーター（分離①）のアップロード
+# 2) PDF アップロード
 curl -s -X POST "http://localhost:8000/api/v1/pdf/upload" \
-  -F "file=@./backend/uploads/sample.pdf" | jq .
+  -F "file=@./sample.pdf"
 
-# 4) 空ルーター（LP/Embed）の疎通確認
-curl -s http://localhost:8000/api/v1/lp/ | jq .
-curl -s http://localhost:8000/api/v1/embed/ | jq .
+# 3) 検索・質問
+curl -s -X POST "http://localhost:8000/api/v1/pdf/search" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"テスト","top_k":1}'
+curl -s -X POST "http://localhost:8000/api/v1/pdf/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"このPDFの概要は？","top_k":1}'
+
+# 4) LP/Embed（疎通）
+curl -s http://localhost:8000/api/v1/lp/
+curl -s http://localhost:8000/api/v1/embed/
 ```
 
-期待値：1) 200, 2) 既存と同様のレスポンス, 3) 2) と同形式のレスポンス, 4) `{ "status": "ok" }`。
+期待値：すべて 200、LP/Embed は `{ "status": "ok" }`。
 
 ### ロールバック手順
 
