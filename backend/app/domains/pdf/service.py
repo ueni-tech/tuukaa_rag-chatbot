@@ -28,6 +28,7 @@ async def ingest_pdf_to_vectorstore(pdf_path: Path, rag_engine: RAGEngine) -> Di
         "text_length": len(text),
         "chunk_count": len(chunks),
         "vectorstore_info": vectorstore_info,
+        "estimated_tokens": document_processor.count_tokens(text),
     }
 
 
