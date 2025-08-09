@@ -107,6 +107,17 @@ export default function ChatPage() {
                 Upload a PDF document and start asking questions about its
                 content.
               </p>
+              <div className="flex items-center justify-center gap-4 mt-6 text-sm">
+                <a className="underline" href="/pdf">
+                  PDF
+                </a>
+                <a className="underline" href="/lp">
+                  LP
+                </a>
+                <a className="underline" href="/embed-admin">
+                  Embed Admin
+                </a>
+              </div>
               {config.isDebug && (
                 <p className="text-xs mt-2 opacity-75">Debug Mode: ON</p>
               )}
