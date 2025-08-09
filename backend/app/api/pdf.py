@@ -28,6 +28,7 @@ from ..domains.pdf.service import (
     get_system_info as service_get_system_info,
     reset_system as service_reset_system,
 )
+from ..core.rate_limit import rate_limited
 
 
 router = APIRouter(prefix="/pdf", tags=["PDF"])
@@ -37,6 +38,7 @@ document_processor = DocumentProcessor()
 
 
 @router.post("/upload", response_model=UploadResponse)
+@rate_limited("pdf:upload")
 async def upload_document(
     file: UploadFile = File(...),
     rag_engine: RAGEngine = Depends(get_rag_engine),
@@ -90,6 +92,7 @@ async def upload_document(
 
 
 @router.post("/ask", response_model=AnswerResponse)
+@rate_limited("pdf:ask")
 async def ask_question(
     request: QuestionRequest, rag_engine: RAGEngine = Depends(get_rag_engine)
 ) -> AnswerResponse:
@@ -111,6 +114,7 @@ async def ask_question(
 
 
 @router.post("/search", response_model=SearchResponse)
+@rate_limited("pdf:search")
 async def search_documents(
     request: QuestionRequest, rag_engine: RAGEngine = Depends(get_rag_engine)
 ) -> SearchResponse:
@@ -133,6 +137,7 @@ async def search_documents(
 
 
 @router.get("/system/info", response_model=SystemInfoResponse)
+@rate_limited("pdf:system:info")
 async def get_system_info(
     rag_engine: RAGEngine = Depends(get_rag_engine),
 ) -> SystemInfoResponse:
@@ -148,6 +153,7 @@ async def get_system_info(
 
 
 @router.post("/system/reset")
+@rate_limited("pdf:system:reset")
 async def reset_system(
     rag_engine: RAGEngine = Depends(get_rag_engine),
 ) -> dict[str, str]:
