@@ -67,13 +67,10 @@ export default function AppSidebar() {
         const formData = new FormData()
         formData.append('file', file)
 
-        const respose = await fetch(
-          `${config.apiUrl}${config.apiBasePath}/upload`,
-          {
-            method: 'POST',
-            body: formData,
-          }
-        )
+        const respose = await fetch(`/api/file/upload`, {
+          method: 'POST',
+          body: formData,
+        })
 
         if (!respose.ok) {
           const errorDate = await respose.json()
