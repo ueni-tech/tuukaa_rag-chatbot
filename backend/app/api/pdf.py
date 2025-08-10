@@ -10,8 +10,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from ..core.dependencies import get_rag_engine
-from ..core.rag_engine import RAGEngine
+from ..core.web.dependencies import get_rag_engine
+from ..core.services.rag_engine import RAGEngine
 from ..models.schemas import SystemInfoResponse
 from ..domains.pdf.schemas import (
     UploadResponse,
@@ -20,7 +20,7 @@ from ..domains.pdf.schemas import (
     SearchResponse,
     DocumentInfo,
 )
-from ..core.document_processor import DocumentProcessor
+from ..core.services.document_processor import DocumentProcessor
 from ..domains.pdf.service import (
     ingest_pdf_to_vectorstore,
     ask_question as service_ask_question,
@@ -28,7 +28,7 @@ from ..domains.pdf.service import (
     get_system_info as service_get_system_info,
     reset_system as service_reset_system,
 )
-from ..core.rate_limit import rate_limited
+from ..core.web.rate_limit import rate_limited
 
 
 router = APIRouter(prefix="/pdf", tags=["PDF"])

@@ -6,19 +6,18 @@ RAGシステムの中核となる
 
 import gc
 import shutil
-from pathlib import Path
 from typing import Any
 
 from chromadb.config import Settings as ChromaSettings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from pydantic import SecretStr
 
-from .config import settings
+from ..config import settings
 
 
 class RAGEngine:
@@ -66,15 +65,21 @@ class RAGEngine:
         非同期で初期化することで、起動時の応答性を向上させる
         """
         try:
+            api_key: SecretStr | None = (
+                SecretStr(settings.openai_api_key)
+                if settings.openai_api_key is not None
+                else None
+            )
+
             self.embeddings = OpenAIEmbeddings(
                 model=settings.embedding_model,
-                openai_api_key=settings.openai_api_key,
+                api_key=api_key,
             )
 
             self.llm = ChatOpenAI(
                 model=settings.default_model,
                 temperature=settings.default_temperature,
-                openai_api_key=settings.openai_api_key,
+                api_key=api_key,
             )
 
             await self._load_existing_vectorstore()
@@ -125,7 +130,7 @@ class RAGEngine:
 
             self.vectorstore.persist()
 
-            current_uuid = self.vectorstore._collection.id
+            current_uuid = str(self.vectorstore._collection.id)
             await self._cleanup_old_directories(current_uuid)
 
             return {
@@ -265,7 +270,7 @@ class RAGEngine:
         Returns:
             システム情報の辞書
         """
-        info = {
+        info: dict[str, Any] = {
             "status": "initialized" if self.vectorstore else "not_initialized",
             "embedding_model": settings.embedding_model,
             "llm_model": settings.default_model,
@@ -296,7 +301,7 @@ class RAGEngine:
         """
         try:
             if self.vectorstore:
-                current_uuid = self.vectorstore._collection.id
+                current_uuid = str(self.vectorstore._collection.id)
                 self.vectorstore._client.reset()
                 await self._cleanup_old_directories(current_uuid)
                 self.vectorstore = None

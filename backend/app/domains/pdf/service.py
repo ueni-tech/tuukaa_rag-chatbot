@@ -8,8 +8,8 @@ STEP 2: 既存の実装（`app.core.document_processor`, `app.core.rag_engine`�
 from pathlib import Path
 from typing import Any, Dict, List
 
-from ...core.document_processor import DocumentProcessor
-from ...core.rag_engine import RAGEngine
+from ...core.services.document_processor import DocumentProcessor
+from ...core.services.rag_engine import RAGEngine
 
 
 document_processor = DocumentProcessor()

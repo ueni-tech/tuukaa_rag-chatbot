@@ -2,7 +2,7 @@
 依存性注入のためのヘルパー関数
 """
 
-from .rag_engine import RAGEngine
+from ..services.rag_engine import RAGEngine
 
 # グローバルRAGエンジンインスタンス
 _rag_engine: RAGEngine = RAGEngine()

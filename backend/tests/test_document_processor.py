@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from app.core.document_processor import DocumentProcessor
+from app.core.services.document_processor import DocumentProcessor
 import asyncio
 
 

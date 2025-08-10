@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from ..core.rate_limit import rate_limited
+from ..core.web.rate_limit import rate_limited
 
 
 router = APIRouter(prefix="/embed", tags=["Embed"])

@@ -2,7 +2,7 @@ import pytest
 import tempfile
 from pathlib import Path
 from app.core import config
-from app.core.rag_engine import RAGEngine
+from app.core.services.rag_engine import RAGEngine
 
 
 @pytest.fixture(autouse=True)

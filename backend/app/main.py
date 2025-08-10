@@ -17,8 +17,8 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from .api import router as api_router
 from .core.config import settings
-from .core.dependencies import get_rag_engine, initialize_rag_engine
-from .core.rag_engine import RAGEngine
+from .core.web.dependencies import get_rag_engine, initialize_rag_engine
+from .core.services.rag_engine import RAGEngine
 from .models.schemas import HealthResponse
 
 # タイムゾーン設定
