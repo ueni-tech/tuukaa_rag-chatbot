@@ -55,33 +55,42 @@ export default function AppSidebar() {
     const files = event.target.files
     if (!files || files.length === 0) return
 
+    const validFiles = Array.from(files).filter(file => {
+      const isValid =
+        file.type === 'application/pdf' ||
+        file.name.toLowerCase().endsWith('.pdf')
+      if (!isValid) {
+        toast.error(`${file.name}はPDFファイルではありません`)
+      }
+      return isValid
+    })
+
+    if (validFiles.length === 0) {
+      toast.warning('有効なPDFファイルがありませんでした')
+      event.target.value = ''
+      return
+    }
+
     setIsUploading(true)
 
     try {
-      for (const file of Array.from(files)) {
-        if (file.type !== 'application/pdf') {
-          toast.error(`${file.name}はPDFファイルではありません`)
-          continue
-        }
+      for (const file of validFiles) {
+        console.log(`Uploading: ${file.name}`)
 
         const formData = new FormData()
         formData.append('file', file)
 
-        const respose = await fetch(`/api/file/upload`, {
+        const response = await fetch(`/api/file/upload`, {
           method: 'POST',
           body: formData,
         })
 
-        if (!respose.ok) {
-          const errorDate = await respose.json()
-          throw new Error(
-            `アップロードエラー: ${errorDate.detail || 'Unknown error'}`
-          )
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Network response was not ok')
         }
 
-        const result = await respose.json()
-        console.log('Upload successful:', result)
-
+        const result = await response.json()
         setUploadedFiles(prev => [...prev, file.name])
         toast.success(`${file.name}をアップロードしました`)
       }

@@ -31,10 +31,21 @@ export async function POST(req: Request) {
     )
 
     if (!askResponse.ok) {
-      const errorData = await askResponse.json()
-      throw new Error(
-        `FastAPI request failed: ${errorData.detail || 'Unknown error'}`
-      )
+      const contentType = askResponse.headers.get('content-type')
+      let errorMessage = 'Unknown error'
+
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          const errorData = await askResponse.json()
+          errorMessage = errorData.detail || 'Unknown error'
+        } catch {
+          errorMessage = 'JSON parse error in error response'
+        }
+      } else {
+        errorMessage = await askResponse.text()
+      }
+
+      throw new Error(`FastAPI request failed: ${errorMessage}`)
     }
 
     const data = await askResponse.json()
