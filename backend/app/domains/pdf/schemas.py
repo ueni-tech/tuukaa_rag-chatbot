@@ -47,3 +47,36 @@ class UploadResponse(BaseModel):
     vectorstore_info: dict[str, Any] | None = Field(
         None, description="ベクトルストア情報"
     )
+
+
+class FileInfo(BaseModel):
+    """ファイル情報モデル"""
+
+    filename: str = Field(..., description="ファイル名")
+    file_id: str = Field(..., description="ファイルID")
+    upload_time: str = Field(..., description="アップロード時刻")
+    chunk_count: str = Field(..., description="チャンク数")
+    file_size: str = Field(..., description="ファイルサイズ（バイト）")
+
+
+class DocumentListResponse(BaseModel):
+    """ドキュメント一覧レスポンスモデル"""
+
+    files: list[FileInfo] = Field(..., description="アップロード済みファイル一覧")
+    total_file: int = Field(..., description="総ファイル数")
+    total_chunks: int = Field(..., description="総チャンク数")
+
+
+class DeleteDocumentRequest(BaseModel):
+    """ドキュメント削除リクエストモデル"""
+
+    filename: str = Field(..., min_length=1, description="削除するファイル名")
+
+
+class DeleteDocumentResponse(BaseModel):
+    """ドキュメント削除レスポンスモデル"""
+
+    status: str = Field(..., description="削除ステータス")
+    message: str = Field(..., description="削除結果メッセージ")
+    deleted_filename: str = Field(..., description="削除されたファイル名")
+    remaining_files: int = Field(..., description="残りファイル数")

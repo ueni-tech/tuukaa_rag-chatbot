@@ -7,6 +7,8 @@ RAGシステムの中核となる
 import gc
 import shutil
 from typing import Any
+from datetime import datetime
+import uuid
 
 from chromadb.config import Settings as ChromaSettings
 from langchain_community.vectorstores import Chroma
@@ -105,14 +107,15 @@ class RAGEngine:
 
         return False
 
-    async def create_vectorstore_from_chunks(self, chunks: list[str]) -> dict[str, Any]:
+    async def create_vectorstore_from_chunks(
+        self, chunks: list[str], filename: str
+    ) -> dict[str, Any]:
         """チャンクからベクトルストア作成
         Args:
-            chunks: テキストチャンクのりすと
-
+            chunks: テキストチャンクのリスト
+            filename: アップロードされたファイル名
         Returns:
             作成結果の情報
-
         Raises:
             RuntimeError: ベクトルストアの作成に失敗した場合
         """
@@ -120,39 +123,66 @@ class RAGEngine:
             raise RuntimeError("RAGエンジンが初期化されていません")
 
         try:
-            await self._cleanup_existing_vectorstore()
+            if not self.vectorstore:
+                await self._load_existing_vectorstore()
 
-            self.vectorstore = Chroma.from_texts(
-                texts=chunks,
-                embedding=self.embeddings,
-                client_settings=self.chroma_settings,
-            )
+            file_id = str(uuid.uuid4())
+            upload_time = datetime.now().isoformat()
+            metadatas = [
+                {
+                    "filename": filename,
+                    "file_id": file_id,
+                    "upload_time": upload_time,
+                    "chunk_index": i,
+                }
+                for i in range(len(chunks))
+            ]
+
+            if not self.vectorstore:
+                # 新規作成
+                self.vectorstore = Chroma.from_texts(
+                    texts=chunks,
+                    embedding=self.embeddings,
+                    metadatas=metadatas,
+                    client_settings=self.chroma_settings,
+                )
+            else:
+                # 既存コレクションに追記
+                await self._add_chunks_to_existing_vectorstore(chunks, metadatas)
 
             self.vectorstore.persist()
-
             current_uuid = str(self.vectorstore._collection.id)
             await self._cleanup_old_directories(current_uuid)
 
             return {
                 "status": "success",
-                "chunks_count": len(chunks),
-                "collection_id": current_uuid,
+                "chunks_count": "lec(chunks)",
+                "collection_id": "current_uuid",
                 "document_count": self.vectorstore._collection.count(),
+                "filename": filename,
             }
 
         except Exception as e:
             raise RuntimeError(f"ベクトルストアの作成に失敗しました: {str(e)}")
 
-    async def _cleanup_existing_vectorstore(self) -> None:
-        """既存のベクトルストア接続をクリーンアップ"""
-        if self.vectorstore:
-            try:
-                self.vectorstore._client.reset()
-            except Exception:
-                pass
-            del self.vectorstore
-            self.vectorstore = None
-            gc.collect()
+    async def _add_chunks_to_existing_vectorstore(
+        self, chunks: list[str], metadatas: list[dict[str, Any]]
+    ) -> None:
+        """既存のベクトルストアにチャンクを追加"""
+        self.vectorstore.add_texts(texts=chunks, metadatas=metadatas)
+
+    # NOTE
+    # ↓はベクトルストアの上書き作成用のメソッドのため利用停止
+    # async def _cleanup_existing_vectorstore(self) -> None:
+    #     """既存のベクトルストア接続をクリーンアップ"""
+    #     if self.vectorstore:
+    #         try:
+    #             self.vectorstore._client.reset()
+    #         except Exception:
+    #             pass
+    #         del self.vectorstore
+    #         self.vectorstore = None
+    #         gc.collect()
 
     async def _cleanup_old_directories(self, keep_uuid: str) -> None:
         """古いUUIDディレクトリを削除
@@ -293,6 +323,81 @@ class RAGEngine:
             info["vectorstore_ready"] = False
 
         return info
+
+    async def get_document_list(self) -> dict[str, Any]:
+        """アップロード済みドキュメント一覧を取得"""
+        try:
+            if not self.vectorstore:
+                return {"files": [], "total_files": 0, "total_chunks": 0}
+
+            collection = self.vectorstore._collection
+            results = collection.get(include=["metadatas"])
+            metadatas = results.get("metadatas") or []
+            if not metadatas:
+                return {"files": [], "total_files": 0, "total_chunks": 0}
+
+            file_info_dict: dict[str, dict[str, Any]] = {}
+            for md in metadatas:
+                if not md:
+                    continue
+                fname = md.get("filename", "unknown")
+                if fname not in file_info_dict:
+                    file_info_dict[fname] = {
+                        "filename": fname,
+                        "file_id": md.get("file_id", "unknown"),
+                        "upload_time": md.get("upload_time", "unknown"),
+                        "chunk_count": 0,
+                        "file_size": md.get("file_size", 0),
+                    }
+                file_info_dict[fname]["chunk_count"] += 1
+
+            files_list = list(file_info_dict.values())
+            return {
+                "files": files_list,
+                "total_files": len(files_list),
+                "total_chunks": len(metadatas),
+            }
+        except Exception as e:
+            raise RuntimeError(f"ドキュメント一覧の取得に失敗しました: {str(e)}")
+
+    async def delete_documet_by_filename(self, filename: str) -> dict[str, Any]:
+        """ファイル名でドキュメントを削除"""
+        try:
+            if not self.vectorstore:
+                raise RuntimeError("ベクトルストアが初期化されていません")
+
+            collection = self.vectorstore._collection
+            before_count = collection.count()
+
+            results = collection.get(
+                where={"filename": filename}, include=["metadatas"]
+            )
+            ids = results.get("ids") or []
+            if not ids:
+                raise ValueError(f"ファイル '{filename}'は見つかりませんでした")
+
+            deleted_count = len(ids)
+            collection.delete(where={"filename": filename})
+            after_count = collection.count()
+
+            remaining_results = collection.get(include=["metadatas"])
+            metadatas = remaining_results.get("metadatas") or []
+            remaining_files = (
+                len({md.get("filename", "unknown") for md in metadatas if md})
+                if metadatas
+                else 0
+            )
+
+            return {
+                "status": "success",
+                "message": f"ファイル '{filename}'を削除しました",
+                "deleted_filename": filename,
+                "deleted_chunks": deleted_count,
+                "remaining_files": remaining_files,
+                "remaining_chunks": after_count,
+            }
+        except Exception as e:
+            raise RuntimeError(f"ドキュメントの削除に失敗しました: {str(e)}")
 
     async def reset_vectorstore(self) -> dict[str, str]:
         """ベクトルストアをリセット
