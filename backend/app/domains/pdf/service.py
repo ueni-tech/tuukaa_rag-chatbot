@@ -16,7 +16,7 @@ document_processor = DocumentProcessor()
 
 
 async def ingest_pdf_to_vectorstore(
-    pdf_path: Path, rag_engine: RAGEngine
+    pdf_path: Path, rag_engine: RAGEngine, filename: str
 ) -> Dict[str, Any]:
     """PDF を読み取り、チャンク化してベクトルストアを構築する薄いラッパ。
 
@@ -25,7 +25,7 @@ async def ingest_pdf_to_vectorstore(
     """
     text = await document_processor.extract_text_form_pdf(pdf_path)
     chunks = document_processor.split_text(text)
-    vectorstore_info = await rag_engine.create_vectorstore_from_chunks(chunks)
+    vectorstore_info = await rag_engine.create_vectorstore_from_chunks(chunks, filename)
     return {
         "text_length": len(text),
         "chunk_count": len(chunks),

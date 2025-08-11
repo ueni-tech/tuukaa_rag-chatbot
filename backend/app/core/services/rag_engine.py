@@ -156,8 +156,8 @@ class RAGEngine:
 
             return {
                 "status": "success",
-                "chunks_count": "lec(chunks)",
-                "collection_id": "current_uuid",
+                "chunks_count": len(chunks),
+                "collection_id": current_uuid,
                 "document_count": self.vectorstore._collection.count(),
                 "filename": filename,
             }
@@ -360,7 +360,7 @@ class RAGEngine:
         except Exception as e:
             raise RuntimeError(f"ドキュメント一覧の取得に失敗しました: {str(e)}")
 
-    async def delete_documet_by_filename(self, filename: str) -> dict[str, Any]:
+    async def delete_document_by_filename(self, filename: str) -> dict[str, Any]:
         """ファイル名でドキュメントを削除"""
         try:
             if not self.vectorstore:

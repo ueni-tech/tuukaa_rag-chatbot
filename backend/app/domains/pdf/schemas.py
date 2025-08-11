@@ -55,15 +55,15 @@ class FileInfo(BaseModel):
     filename: str = Field(..., description="ファイル名")
     file_id: str = Field(..., description="ファイルID")
     upload_time: str = Field(..., description="アップロード時刻")
-    chunk_count: str = Field(..., description="チャンク数")
-    file_size: str = Field(..., description="ファイルサイズ（バイト）")
+    chunk_count: int = Field(..., description="チャンク数")
+    file_size: int = Field(..., description="ファイルサイズ（バイト）")
 
 
 class DocumentListResponse(BaseModel):
     """ドキュメント一覧レスポンスモデル"""
 
     files: list[FileInfo] = Field(..., description="アップロード済みファイル一覧")
-    total_file: int = Field(..., description="総ファイル数")
+    total_files: int = Field(..., description="総ファイル数")
     total_chunks: int = Field(..., description="総チャンク数")
 
 

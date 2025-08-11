@@ -19,6 +19,9 @@ from ..domains.pdf.schemas import (
     AnswerResponse,
     SearchResponse,
     DocumentInfo,
+    DocumentListResponse,
+    DeleteDocumentRequest,
+    DeleteDocumentResponse,
 )
 from ..core.services.document_processor import DocumentProcessor
 from ..domains.pdf.service import (
@@ -60,7 +63,9 @@ async def upload_document(
             temp_file.write(content)
             temp_file_path = Path(temp_file.name)
 
-        ingest_info = await ingest_pdf_to_vectorstore(temp_file_path, rag_engine)
+        ingest_info = await ingest_pdf_to_vectorstore(
+            temp_file_path, rag_engine, file.filename
+        )
 
         file_info = {
             "filename": file.filename,
@@ -134,6 +139,51 @@ async def search_documents(
     return SearchResponse(
         documents=document_list, query=request.question, total_found=len(documents)
     )
+
+
+@router.get("/documents", response_model=DocumentListResponse)
+@rate_limited("pdf:documents:list")
+async def get_document_list(
+    rag_engine: RAGEngine = Depends(get_rag_engine),
+) -> DocumentListResponse:
+    try:
+        logger.info("ドキュメント一覧取得開始")
+        result = await rag_engine.get_document_list()
+        logger.info(f"ドキュメント一覧取得完了: {result['total_files']}ファイル")
+        return DocumentListResponse(
+            files=result["files"],
+            total_files=result["total_files"],
+            total_chunks=result["total_chunks"],
+        )
+    except Exception as e:
+        logger.error(f"ドキュメント一覧取得エラー: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"ドキュメント一覧の取得に失敗しました: {str(e)}"
+        )
+
+
+@router.delete("/documents", response_model=DeleteDocumentResponse)
+@rate_limited("pdf:documents:delete")
+async def delete_document(
+    request: DeleteDocumentRequest, rag_engine: RAGEngine = Depends(get_rag_engine)
+) -> DeleteDocumentResponse:
+    try:
+        logger.info(f"ドキュメント削除開始: {request.filename}")
+        result = await rag_engine.delete_document_by_filename(request.filename)
+        logger.info(f"ドキュメント削除完了: {request.filename}")
+        return DeleteDocumentResponse(
+            status=result["status"],
+            message=result["message"],
+            deleted_filename=result["deleted_filename"],
+            remaining_files=result["remaining_files"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"ドキュメント削除エラー: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"ドキュメントの削除に失敗しました: {str(e)}"
+        )
 
 
 @router.get("/system/info", response_model=SystemInfoResponse)
