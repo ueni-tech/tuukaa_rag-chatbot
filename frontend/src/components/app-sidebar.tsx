@@ -107,10 +107,28 @@ export default function AppSidebar() {
     }
   }
 
-  const removeFile = (fileName: string) => {
-    setUploadedFiles(prev => prev.filter(file => file !== fileName))
-    if (uploadedFiles.length <= 1) {
-      setIsVectorstoreReady(false)
+  const removeFile = async (fileName: string) => {
+    try {
+      const response = await fetch('/api/file/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Network response was not ok')
+      }
+
+      const result = await response.json()
+      setUploadedFiles(prev => prev.filter(file => file !== fileName))
+      setIsVectorstoreReady(result.remaining_files > 0)
+      toast.success(`${result.deleted_filename ?? fileName}を削除しました`)
+    } catch (error) {
+      console.error('delete error:', error)
+      toast.error(
+        error instanceof Error ? error.message : 'ファイル削除に失敗しました'
+      )
     }
   }
 
