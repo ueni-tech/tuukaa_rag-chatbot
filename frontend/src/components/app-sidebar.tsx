@@ -48,6 +48,7 @@ export default function AppSidebar() {
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isVectorStoreReady, setIsVectorstoreReady] = useState(false)
+  const [deleting, setDeleting] = useState<Record<string, boolean>>({})
 
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -108,6 +109,14 @@ export default function AppSidebar() {
   }
 
   const removeFile = async (fileName: string) => {
+    if (!confirm(`${fileName}を削除しますか？`)) return
+
+    setDeleting(prev => {
+      const next = { ...prev };
+      next[fileName] = true;
+      return next;
+    });
+
     try {
       const response = await fetch('/api/file/delete', {
         method: 'DELETE',
@@ -116,8 +125,18 @@ export default function AppSidebar() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Network response was not ok')
+        let detail = 'Unknown error'
+        try {
+          const err = await response.json()
+          detail = err.error || err.detail || detail
+        } catch { }
+        if (response.status === 404) {
+          toast.info(`${fileName}は既に存在しません`)
+          setUploadedFiles(prev => prev.filter(f => f !== fileName))
+          setIsVectorstoreReady(false)
+          return
+        }
+        throw new Error(detail)
       }
 
       const result = await response.json()
@@ -129,6 +148,12 @@ export default function AppSidebar() {
       toast.error(
         error instanceof Error ? error.message : 'ファイル削除に失敗しました'
       )
+    } finally {
+      setDeleting(prev => {
+        const next = { ...prev }
+        delete next[fileName]
+        return next
+      })
     }
   }
 
@@ -157,10 +182,9 @@ export default function AppSidebar() {
                 <div className="flex items-center justify-center w-full">
                   <label
                     className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors
-                      ${
-                        isVectorStoreReady
-                          ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20'
-                          : 'border-muted-foreground/25 hover:bg-muted/50'
+                      ${isVectorStoreReady
+                        ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20'
+                        : 'border-muted-foreground/25 hover:bg-muted/50'
                       }
                       ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
@@ -215,6 +239,7 @@ export default function AppSidebar() {
                           size="sm"
                           onClick={() => removeFile(fileName)}
                           className="h-6 w-6 p-0"
+                          disabled={Boolean(deleting[fileName])}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>

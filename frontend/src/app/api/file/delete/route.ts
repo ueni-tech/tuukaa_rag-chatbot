@@ -2,20 +2,37 @@ import { config } from '@/lib/config'
 
 export async function DELETE(req: Request) {
   try {
-    const { fileName } = await req.json()
+    let body: any = {}
+    try {
+      body = await req.json()
+    } catch {
+      return Response.json({ error: '不正なJSONです' }, { status: 400 })
+    }
+    const { fileName } = body
+    if (!fileName || typeof fileName !== 'string') {
+      return Response.json({ error: 'fileNameは必須です' }, { status: 400 })
+    }
 
-    const deleteResponse = await fetch(
-      `${config.apiUrl}${config.apiBasePath}/pdf/documents`,
-      {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename: fileName,
-        }),
-      }
-    )
+    const ac = new AbortController()
+    const t = setTimeout(() => ac.abort(), 10000)
+
+    let deleteResponse: Response
+    try {
+      deleteResponse = await fetch(
+        `${config.apiUrl}${config.apiBasePath}/pdf/documents`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ filename: fileName }),
+          signal: ac.signal,
+          cache: 'no-store',
+        }
+      )
+    } finally {
+      clearTimeout(t)
+    }
 
     if (!deleteResponse.ok) {
       let detail = 'Unknown error'
@@ -41,14 +58,7 @@ export async function DELETE(req: Request) {
     })
   } catch (error) {
     console.error('File delete API error:', error)
-    return Response.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'ファイル削除中にエラーが発生しました。',
-      },
-      { status: 500 }
-    )
+    const msg = error instanceof DOMException && error.name === 'AbortError' ? 'タイムアウトしました。ネットワーク状況を確認してください。' : error instanceof Error ? error.message : 'ファイル削除中にエラーが発生しました。'
+    return Response.json({ error: msg }, { status: 500 })
   }
 }
