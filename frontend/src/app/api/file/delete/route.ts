@@ -44,7 +44,7 @@ export async function DELETE(req: Request) {
       }
       return Response.json(
         { error: `ファイル削除エラー: ${detail}` },
-        { status: deleteResponse.status }
+        { status: 400 }
       )
     }
 

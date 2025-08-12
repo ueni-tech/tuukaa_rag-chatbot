@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Sidebar,
   SidebarContent,
@@ -50,6 +50,33 @@ export default function AppSidebar() {
   const [isVectorStoreReady, setIsVectorstoreReady] = useState(false)
   const [deleting, setDeleting] = useState<Record<string, boolean>>({})
 
+  const syncFiles = useCallback(async () => {
+    try {
+      const response = await fetch('/api/file/documents', { cache: 'no-store' })
+      if (!response.ok) {
+        let detail = 'Unknown error'
+        try {
+          const err = await response.json()
+          detail = err.error || err.detail || detail
+        } catch { }
+        throw new Error(detail)
+      }
+
+      const data = await response.json()
+      const files: string[] = Array.isArray(data.files) ? data.files.map((f: any) => f.filename) : []
+
+      setUploadedFiles(files)
+      setIsVectorstoreReady((data.total_files ?? files.length) > 0)
+    } catch (e) {
+      console.error('sync files error:', e)
+      toast.error(`ドキュメント一覧の再取得に失敗: ${e instanceof Error ? e.message : 'Unknown error'}`)
+    }
+  }, [])
+
+  useEffect(() => {
+    syncFiles()
+  }, [syncFiles])
+
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -97,6 +124,7 @@ export default function AppSidebar() {
       }
 
       setIsVectorstoreReady(true)
+      await syncFiles()
     } catch (error) {
       console.error('Upload error:', error)
       toast.error(
@@ -143,6 +171,7 @@ export default function AppSidebar() {
       setUploadedFiles(prev => prev.filter(file => file !== fileName))
       setIsVectorstoreReady(result.remaining_files > 0)
       toast.success(`${result.deleted_filename ?? fileName}を削除しました`)
+      await syncFiles()
     } catch (error) {
       console.error('delete error:', error)
       toast.error(
