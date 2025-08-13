@@ -4,7 +4,7 @@ export const maxDuration = 30
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json()
+    const { messages, askToBot } = await req.json()
 
     const lastMessage = messages[messages.length - 1]
     const question = lastMessage?.content || ''
@@ -16,19 +16,20 @@ export async function POST(req: Request) {
       )
     }
 
-    const askResponse = await fetch(
-      `${config.apiUrl}${config.apiBasePath}/pdf/ask`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          question: question,
-          top_k: 5,
-        }),
-      }
-    )
+    const url = askToBot
+      ? `${config.apiUrl}${config.apiBasePath}/pdf/ask`
+      : `${config.apiUrl}${config.apiBasePath}/pdf/search`
+
+    const askResponse = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        question: question,
+        top_k: 5,
+      }),
+    })
 
     if (!askResponse.ok) {
       const contentType = askResponse.headers.get('content-type')

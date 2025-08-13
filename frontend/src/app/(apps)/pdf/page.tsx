@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card } from '@/components/ui/card'
-import { Send, Bot, User } from 'lucide-react'
+import { Send, Bot, User, Search } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { toast } from 'sonner'
 import { config } from '@/lib/config'
+import { Switch } from '@/components/ui/switch'
 
 interface Message {
   id: string
@@ -25,6 +26,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isBot, setIsBot] = useState(true)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,6 +50,7 @@ export default function ChatPage() {
         },
         body: JSON.stringify({
           messages: [...messages, userMessage],
+          askToBot: isBot,
         }),
       })
 
@@ -131,14 +134,22 @@ export default function ChatPage() {
                   )}
                 </div>
                 <Card className="p-4">
-                  <div className="prose prose-sm max-w-none dark:prose-invert">
-                    {message.content}
-                  </div>
+                  {message.content ? (
+                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                      {message.content}
+                    </div>
+                  ) : (
+                    ''
+                  )}
 
                   {/* 参照された文書を表示 */}
                   {message.documents && message.documents.length > 0 && (
                     <div className="mt-3 space-y-2 text-xs text-muted-foreground">
-                      <p className="font-semibold">参照元:</p>
+                      {message.content ? (
+                        <p className="font-semibold">参照元:</p>
+                      ) : (
+                        <p className="font-semibold">検索結果:</p>
+                      )}
                       {message.documents.map((doc, docIndex) => (
                         <div
                           key={docIndex}
@@ -187,6 +198,11 @@ export default function ChatPage() {
           className="flex gap-2 p-4 max-w-4xl mx-auto"
           onSubmit={handleSubmit}
         >
+          <div className="flex items-center justify-between gap-1">
+            <Search className="h-4 w-4" />
+            <Switch checked={isBot} onCheckedChange={setIsBot} />
+            <Bot className="h-4 w-4" />
+          </div>
           <Input
             value={input}
             onChange={e => setInput(e.target.value)}
