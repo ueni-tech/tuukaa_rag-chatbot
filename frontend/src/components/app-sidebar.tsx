@@ -58,18 +58,22 @@ export default function AppSidebar() {
         try {
           const err = await response.json()
           detail = err.error || err.detail || detail
-        } catch { }
+        } catch {}
         throw new Error(detail)
       }
 
       const data = await response.json()
-      const files: string[] = Array.isArray(data.files) ? data.files.map((f: any) => f.filename) : []
+      const files: string[] = Array.isArray(data.files)
+        ? data.files.map((f: any) => f.filename)
+        : []
 
       setUploadedFiles(files)
       setIsVectorstoreReady((data.total_files ?? files.length) > 0)
     } catch (e) {
       console.error('sync files error:', e)
-      toast.error(`ドキュメント一覧の再取得に失敗: ${e instanceof Error ? e.message : 'Unknown error'}`)
+      toast.error(
+        `ドキュメント一覧の再取得に失敗: ${e instanceof Error ? e.message : 'Unknown error'}`
+      )
     }
   }, [])
 
@@ -140,10 +144,10 @@ export default function AppSidebar() {
     if (!confirm(`${fileName}を削除しますか？`)) return
 
     setDeleting(prev => {
-      const next = { ...prev };
-      next[fileName] = true;
-      return next;
-    });
+      const next = { ...prev }
+      next[fileName] = true
+      return next
+    })
 
     try {
       const response = await fetch('/api/file/delete', {
@@ -157,7 +161,7 @@ export default function AppSidebar() {
         try {
           const err = await response.json()
           detail = err.error || err.detail || detail
-        } catch { }
+        } catch {}
         if (response.status === 404) {
           toast.info(`${fileName}は既に存在しません`)
           setUploadedFiles(prev => prev.filter(f => f !== fileName))
@@ -210,31 +214,20 @@ export default function AppSidebar() {
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-center w-full">
                   <label
-                    className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors
-                      ${isVectorStoreReady
-                        ? 'border-green-500/50 bg-green-50/50 dark:bg-green-950/20'
-                        : 'border-muted-foreground/25 hover:bg-muted/50'
-                      }
+                    className={`flex flex-col items-center justify-center w-full h-12 border-2 border-dashed rounded-lg cursor-pointer transition-colors border-muted-foreground/25 hover:bg-muted/50 
                       ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <div className="flex gap-2 items-center justify-center">
                       {isUploading ? (
                         <>
-                          <div className="h-6 w-6 mb-2 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                           <p className="text-xs text-muted-foreground text-center">
                             アップロード中...
                           </p>
                         </>
-                      ) : isVectorStoreReady ? (
-                        <>
-                          <CheckCircle className="h-6 w-6 mb-2 text-green-600" />
-                          <p className="text-xs text-green-600 text-center font-medium">
-                            ベクトルストア準備完了
-                          </p>
-                        </>
                       ) : (
                         <>
-                          <Upload className="h-6 w-6 mb-2 text-muted-foreground" />
+                          <Upload className="h-4 w-4 text-muted-foreground" />
                           <p className="text-xs text-muted-foreground text-center">
                             Click to upload PDFs
                           </p>
@@ -251,7 +244,16 @@ export default function AppSidebar() {
                     />
                   </label>
                 </div>
-
+                {isVectorStoreReady ? (
+                  <div className="flex gap-2 items-center justify-center">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <p className="text-xs text-green-600 text-center font-medium">
+                      ベクトルストア準備完了
+                    </p>
+                  </div>
+                ) : (
+                  ''
+                )}
                 {uploadedFiles.length > 0 && (
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">Upload Files:</Label>
