@@ -4,7 +4,7 @@ export const maxDuration = 30
 
 export async function POST(req: Request) {
   try {
-    const { messages, askToBot } = await req.json()
+    const { messages, askToBot, model } = await req.json()
 
     const lastMessage = messages[messages.length - 1]
     const question = lastMessage?.content || ''
@@ -28,6 +28,7 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         question: question,
         top_k: 5,
+        model: model || undefined,
       }),
     })
 
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
       question: data.question,
       documents: data.documents,
       context_used: data.context_used,
+      llm_model: data.llm_model,
     })
   } catch (error) {
     console.error('Chat API error:', error)

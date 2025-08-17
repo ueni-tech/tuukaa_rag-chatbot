@@ -35,10 +35,16 @@ async def ingest_pdf_to_vectorstore(
 
 
 async def ask_question(
-    question: str, top_k: int | None, rag_engine: RAGEngine
+    question: str,
+    top_k: int | None,
+    model: str | None,
+    temperature: float | None,
+    rag_engine: RAGEngine,
 ) -> Dict[str, Any]:
     """質問に対して回答を生成する薄いラッパ。"""
-    result = await rag_engine.generate_answer(question=question, top_k=top_k)
+    result = await rag_engine.generate_answer(
+        question=question, top_k=top_k, model=model, temperature=temperature
+    )
     return result
 
 

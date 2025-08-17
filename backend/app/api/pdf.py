@@ -108,13 +108,18 @@ async def ask_question(
         )
 
     result = await service_ask_question(
-        question=request.question, top_k=request.top_k, rag_engine=rag_engine
+        question=request.question,
+        top_k=request.top_k,
+        model=request.model,
+        temperature=request.temperature,
+        rag_engine=rag_engine,
     )
     return AnswerResponse(
         answer=result["answer"],
         question=request.question,
         documents=result["documents"],
         context_used=result["context_used"],
+        llm_model=result["llm_model"],
     )
 
 

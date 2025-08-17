@@ -1,15 +1,24 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card } from '@/components/ui/card'
-import { Send, Bot, User, Search } from 'lucide-react'
+import { Send, Bot, User, Search, Thermometer } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { toast } from 'sonner'
 import { config } from '@/lib/config'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
 
 interface Message {
   id: string
@@ -20,6 +29,7 @@ interface Message {
     metadata?: any
   }>
   content_used?: string
+  llm_model?: string
 }
 
 export default function ChatPage() {
@@ -27,6 +37,39 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isBot, setIsBot] = useState(true)
+
+  const MODELS = [
+    'gpt-4o-mini',
+    'gpt-4.1-nano',
+    'gpt-4.1-mini',
+    'gpt-4o',
+  ] as const
+  type Model = (typeof MODELS)[number]
+  const DEFAULT_MODEL: Model = 'gpt-4o-mini'
+  const [model, setModel] = useState<Model>(DEFAULT_MODEL)
+  const mounted = useRef(false)
+  const isModel = (v: string): v is Model =>
+    (MODELS as readonly string[]).includes(v)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('llm:model')
+      if (saved && isModel(saved)) {
+        setModel(saved)
+      } else {
+        setModel(DEFAULT_MODEL)
+      }
+    } catch {}
+    mounted.current = true
+  }, [])
+
+  // 2回目以降: 変更があったときだけ保存（無効値をブロック）
+  useEffect(() => {
+    if (!mounted.current) return
+    try {
+      localStorage.setItem('llm:model', model)
+    } catch {}
+  }, [model])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,6 +86,9 @@ export default function ChatPage() {
     setIsLoading(true)
 
     try {
+      const model =
+        typeof window !== 'undefined' ? localStorage.getItem('llm:model') : null
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -51,6 +97,7 @@ export default function ChatPage() {
         body: JSON.stringify({
           messages: [...messages, userMessage],
           askToBot: isBot,
+          model: model || undefined,
         }),
       })
 
@@ -67,6 +114,7 @@ export default function ChatPage() {
         content: data.content,
         documents: data.documents,
         content_used: data.context_used,
+        llm_model: data.llm_model,
       }
 
       setMessages(prev => [...prev, assistantMessage])
@@ -99,7 +147,7 @@ export default function ChatPage() {
 
       {/* Chat Message */}
       <ScrollArea className="flex-1 p-4">
-        <div className="space-y-4 max-w-4xl mx-auto">
+        <div className="space-y-4 max-w-5xl mx-auto">
           {messages.length === 0 && (
             <div className="text-center text-muted-foreground py-8">
               <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -137,6 +185,13 @@ export default function ChatPage() {
                   {message.content ? (
                     <div className="prose prose-sm max-w-none dark:prose-invert">
                       {message.content}
+                      {message.llm_model ? (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Model: {message.llm_model}
+                        </div>
+                      ) : (
+                        ''
+                      )}
                     </div>
                   ) : (
                     ''
@@ -195,13 +250,35 @@ export default function ChatPage() {
       {/* Input Form */}
       <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <form
-          className="flex gap-2 p-4 max-w-4xl mx-auto"
+          className="flex gap-2 p-4 max-w-5xl mx-auto"
           onSubmit={handleSubmit}
         >
           <div className="flex items-center justify-between gap-1">
             <Search className="h-4 w-4" />
             <Switch checked={isBot} onCheckedChange={setIsBot} />
             <Bot className="h-4 w-4" />
+          </div>
+          {/* LLM */}
+          <div>
+            <Select
+              value={MODELS.includes(model) ? model : DEFAULT_MODEL}
+              onValueChange={v => {
+                if (v && isModel(v)) setModel(v)
+              }}
+            >
+              <SelectTrigger
+                className={isBot ? '' : 'cursor-not-allowed'}
+                disabled={!isBot}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                <SelectItem value="gpt-4.1-nano">gpt-4.1-nano</SelectItem>
+                <SelectItem value="gpt-4.1-mini">gpt-4.1-mini</SelectItem>
+                <SelectItem value="gpt-4o">gpt-4o</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <Input
             value={input}

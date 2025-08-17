@@ -57,6 +57,26 @@ class RAGEngine:
         self.llm: ChatOpenAI | None = None
         self.vectorstore: Chroma | None = None
         self._ensure_directories()
+        self._llm_cache: dict[tuple[str, float], ChatOpenAI] = {}
+
+    def _get_llm(
+        self, model: str | None, temperature: float | None
+    ) -> tuple[ChatOpenAI, str]:
+        """(model, temperature)ごとにLLMをキャッシュして取得"""
+        used_model = model or settings.default_model
+        used_temp = temperature or settings.default_temperature
+        key = (used_model, used_temp)
+
+        if key not in self._llm_cache:
+            api_key = (
+                SecretStr(settings.openai_api_key)
+                if settings.openai_api_key is not None
+                else None
+            )
+            self._llm_cache[key] = ChatOpenAI(
+                model=used_model, temperature=used_temp, api_key=api_key
+            )
+        return self._llm_cache[key], used_model
 
     def _ensure_directories(self) -> None:
         settings.ensure_directories()
@@ -234,6 +254,8 @@ class RAGEngine:
         self,
         question: str,
         top_k: int | None,
+        model: str | None = None,
+        temperature: float | None = None,
     ) -> dict[str, Any]:
         """RAGによる回答生成
         Args:
@@ -257,16 +279,25 @@ class RAGEngine:
                     "answer": "関連する文書が見つかりませんでした。",
                     "documents": [],
                     "context_used": "",
+                    "llm_model": getattr(self.llm, "model", settings.default_model),
                 }
 
             context = self._format_documents(documents)
+
+            if model is not None or temperature is not None:
+                llm, used_model = self._get_llm(model, temperature)
+            else:
+                llm = self.llm
+                used_model = getattr(
+                    llm, "model", getattr(llm, "model_name", settings.default_model)
+                )
 
             prompt = PromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
 
             rag_chain = (
                 {"context": lambda x: context, "question": RunnablePassthrough()}
                 | prompt
-                | self.llm
+                | llm
                 | StrOutputParser()
             )
 
@@ -279,6 +310,7 @@ class RAGEngine:
                     for doc in documents
                 ],
                 "context_used": context,
+                "llm_model": used_model,
             }
 
         except Exception as e:

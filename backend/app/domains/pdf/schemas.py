@@ -13,6 +13,10 @@ from pydantic import BaseModel, Field, field_validator
 class QuestionRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000, description="質問内容")
     top_k: int | None = Field(None, ge=1, le=10, description="検索結果の上位k件")
+    model: str | None = Field(None, description="LLMモデル指定")
+    temperature: float | None = Field(
+        None, ge=0.0, le=2.0, description="生成温度(0.0～2.0)"
+    )
 
     @field_validator("question")
     @staticmethod
@@ -38,6 +42,7 @@ class AnswerResponse(BaseModel):
     question: str = Field(..., description="質問内容")
     documents: list[DocumentInfo] = Field(..., description="参照された文書")
     context_used: str = Field(..., description="使用されたコンテキスト")
+    llm_model: str = Field(..., description="回答に用いたLLMモデル")
 
 
 class UploadResponse(BaseModel):

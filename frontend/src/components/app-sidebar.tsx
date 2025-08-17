@@ -41,8 +41,6 @@ import { toast } from 'sonner'
 import { config } from '@/lib/config'
 
 export default function AppSidebar() {
-  const [model, setModel] = useState('gpt-4o-mini')
-  const [temperture, setTemperture] = useState([0.7])
   const [maxTokens, setMaxTokens] = useState([2048])
   const [streamingEnabled, setStreamingEnabled] = useState(true)
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
@@ -293,43 +291,7 @@ export default function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <Card>
-              <CardContent className="space-y-4 pt-4">
-                {/* Model Selection */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Model</Label>
-                  <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
-                      <SelectItem value="gpt-4.1-nano">gpt-4.1-nano</SelectItem>
-                      <SelectItem value="gpt-4.1-mini">gpt-4.1-mini</SelectItem>
-                      <SelectItem value="gpt-4o">gpt-4o</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* Temperature */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium flex items-center gap-1">
-                      <Thermometer className="h-3 w-3" />
-                      Tempereture
-                    </Label>
-                    <span className="text-xs text-muted-foreground">
-                      {temperture[0]}
-                    </span>
-                  </div>
-                  <Slider
-                    value={temperture}
-                    onValueChange={setTemperture}
-                    max={2}
-                    min={0}
-                    step={0.1}
-                    className="w-full"
-                  />
-                </div>
-
+              <CardContent className="space-y-4">
                 {/* Max Tokens */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
