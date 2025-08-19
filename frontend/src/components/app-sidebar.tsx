@@ -16,13 +16,6 @@ import {
 } from '@/components/ui/sidebar'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
@@ -31,18 +24,15 @@ import {
   Settings,
   Brain,
   Zap,
-  Thermometer,
   Hash,
   Upload,
   Trash2,
   CheckCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { config } from '@/lib/config'
 
 export default function AppSidebar() {
   const [maxTokens, setMaxTokens] = useState([2048])
-  const [streamingEnabled, setStreamingEnabled] = useState(true)
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isVectorStoreReady, setIsVectorstoreReady] = useState(false)
@@ -56,7 +46,7 @@ export default function AppSidebar() {
         try {
           const err = await response.json()
           detail = err.error || err.detail || detail
-        } catch {}
+        } catch { }
         throw new Error(detail)
       }
 
@@ -159,7 +149,7 @@ export default function AppSidebar() {
         try {
           const err = await response.json()
           detail = err.error || err.detail || detail
-        } catch {}
+        } catch { }
         if (response.status === 404) {
           toast.info(`${fileName}は既に存在しません`)
           setUploadedFiles(prev => prev.filter(f => f !== fileName))
@@ -310,18 +300,6 @@ export default function AppSidebar() {
                     min={256}
                     step={256}
                     className="w-full"
-                  />
-                </div>
-
-                {/* Streaming */}
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium flex items-center gap-1">
-                    <Zap className="h-3 w-3" />
-                    Streaming
-                  </Label>
-                  <Switch
-                    checked={streamingEnabled}
-                    onCheckedChange={setStreamingEnabled}
                   />
                 </div>
               </CardContent>
