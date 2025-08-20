@@ -8,7 +8,7 @@ import logging
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ..core.web.dependencies import get_rag_engine
 from ..core.services.rag_engine import RAGEngine
@@ -44,6 +44,8 @@ document_processor = DocumentProcessor()
 @rate_limited("pdf:upload")
 async def upload_document(
     file: UploadFile = File(...),
+    chunk_size: str = Form(...),
+    chunk_overlap: str = Form(...),
     rag_engine: RAGEngine = Depends(get_rag_engine),
 ) -> UploadResponse:
     if not file.filename or not file.filename.lower().endswith(".pdf"):
@@ -64,7 +66,11 @@ async def upload_document(
             temp_file_path = Path(temp_file.name)
 
         ingest_info = await ingest_pdf_to_vectorstore(
-            temp_file_path, rag_engine, file.filename
+            temp_file_path,
+            rag_engine,
+            file.filename,
+            chunk_size=int(chunk_size),
+            chunk_overlap=int(chunk_overlap),
         )
 
         file_info = {

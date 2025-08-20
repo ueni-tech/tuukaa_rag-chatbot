@@ -32,7 +32,8 @@ import {
 import { toast } from 'sonner'
 
 export default function AppSidebar() {
-  const [maxTokens, setMaxTokens] = useState([2048])
+  const [chunkSize, setChunkSize] = useState([2000])
+  const [chunkOverlap, setChunkOverlap] = useState([200])
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [isVectorStoreReady, setIsVectorstoreReady] = useState(false)
@@ -46,7 +47,7 @@ export default function AppSidebar() {
         try {
           const err = await response.json()
           detail = err.error || err.detail || detail
-        } catch { }
+        } catch {}
         throw new Error(detail)
       }
 
@@ -99,6 +100,8 @@ export default function AppSidebar() {
 
         const formData = new FormData()
         formData.append('file', file)
+        formData.append('chunk_size', String(chunkSize[0]))
+        formData.append('chunk_overlap', String(chunkOverlap[0]))
 
         const response = await fetch(`/api/file/upload`, {
           method: 'POST',
@@ -149,7 +152,7 @@ export default function AppSidebar() {
         try {
           const err = await response.json()
           detail = err.error || err.detail || detail
-        } catch { }
+        } catch {}
         if (response.status === 404) {
           toast.info(`${fileName}は既に存在しません`)
           setUploadedFiles(prev => prev.filter(f => f !== fileName))
@@ -188,6 +191,60 @@ export default function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
+        {/* Vectorstore Settings */}
+        <SidebarGroup>
+          <SidebarGroupLabel className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Vectorstore Settings
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <Card>
+              <CardContent className="space-y-4">
+                {/* chunk size */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium flex items-center gap-1">
+                      <Hash className="h-3 w-3" />
+                      Chunk size
+                    </Label>
+                    <span className="text-xs text-muted-foreground">
+                      {chunkSize[0]}
+                    </span>
+                  </div>
+                  <Slider
+                    value={chunkSize}
+                    onValueChange={setChunkSize}
+                    max={2000}
+                    min={500}
+                    step={100}
+                    className="w-full"
+                  />
+                </div>
+                {/* chunk overlap */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium flex items-center gap-1">
+                      <Hash className="h-3 w-3" />
+                      Chunk overlap
+                    </Label>
+                    <span className="text-xs text-muted-foreground">
+                      {chunkOverlap[0]}
+                    </span>
+                  </div>
+                  <Slider
+                    value={chunkOverlap}
+                    onValueChange={setChunkOverlap}
+                    max={400}
+                    min={10}
+                    step={10}
+                    className="w-full"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
         {/* PDF Upload Section */}
         <SidebarGroup>
           <SidebarGroupLabel className="flex items-center gap-2">
@@ -266,42 +323,6 @@ export default function AppSidebar() {
                     ))}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        {/* LLM Setting */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            LLM Settings
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <Card>
-              <CardContent className="space-y-4">
-                {/* Max Tokens */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium flex items-center gap-1">
-                      <Hash className="h-3 w-3" />
-                      Max Tokens
-                    </Label>
-                    <span className="text-xs text-muted-foreground">
-                      {maxTokens[0]}
-                    </span>
-                  </div>
-                  <Slider
-                    value={maxTokens}
-                    onValueChange={setMaxTokens}
-                    max={4096}
-                    min={256}
-                    step={256}
-                    className="w-full"
-                  />
-                </div>
               </CardContent>
             </Card>
           </SidebarGroupContent>
