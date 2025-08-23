@@ -30,6 +30,7 @@ import {
   CheckCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useSettingsStore } from '@/lib/settings-store'
 
 export default function AppSidebar() {
   const [chunkSize, setChunkSize] = useState([2000])
@@ -38,6 +39,8 @@ export default function AppSidebar() {
   const [isUploading, setIsUploading] = useState(false)
   const [isVectorStoreReady, setIsVectorstoreReady] = useState(false)
   const [deleting, setDeleting] = useState<Record<string, boolean>>({})
+  const topK = useSettingsStore(s => s.topK)
+  const setTopK = useSettingsStore(s => s.setTopK)
 
   const syncFiles = useCallback(async () => {
     try {
@@ -237,6 +240,26 @@ export default function AppSidebar() {
                     max={400}
                     min={10}
                     step={10}
+                    className="w-full"
+                  />
+                </div>
+                {/* top k */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium flex items-center gap-1">
+                      <Hash className="h-3 w-3" />
+                      Top K
+                    </Label>
+                    <span className="text-xs text-muted-foreground">
+                      {topK}
+                    </span>
+                  </div>
+                  <Slider
+                    value={[topK]}
+                    onValueChange={vals => setTopK(vals[0] ?? 1)}
+                    max={10}
+                    min={1}
+                    step={1}
                     className="w-full"
                   />
                 </div>

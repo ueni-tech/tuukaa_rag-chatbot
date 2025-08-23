@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
+import { useSettingsStore } from '@/lib/settings-store'
 
 interface Message {
   id: string
@@ -37,6 +38,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isBot, setIsBot] = useState(true)
+  const topK = useSettingsStore(s => s.topK)
 
   const MODELS = [
     'gpt-4o-mini',
@@ -98,6 +100,7 @@ export default function ChatPage() {
           messages: [...messages, userMessage],
           askToBot: isBot,
           model: model || undefined,
+          top_k: topK,
         }),
       })
 

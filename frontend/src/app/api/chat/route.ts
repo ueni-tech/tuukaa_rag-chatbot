@@ -4,7 +4,7 @@ export const maxDuration = 30
 
 export async function POST(req: Request) {
   try {
-    const { messages, askToBot, model } = await req.json()
+    const { messages, askToBot, model, top_k } = await req.json()
 
     const lastMessage = messages[messages.length - 1]
     const question = lastMessage?.content || ''
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         question: question,
-        top_k: 5,
+        top_k: typeof top_k === 'number' ? top_k : 5,
         model: model || undefined,
       }),
     })
