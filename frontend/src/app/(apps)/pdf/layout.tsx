@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import './globals.css'
+import '../../globals.css'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import AppSidebar from '@/components/app-sidebar'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -13,23 +13,16 @@ export const metadata: Metadata = {
   description: 'Tuukaa is AI-powered chatbot with document understanding',
 }
 
-export default function RootLayout({
+export default function Layout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ja" suppressHydrationWarning>
-      <body className={inter.className}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
-      </body>
-    </html>
+    <SidebarProvider defaultOpen={true}>
+      <AppSidebar />
+      <main className="flex-1 flex flex-col min-h-screen">{children}</main>
+      <Toaster />
+    </SidebarProvider>
   )
 }

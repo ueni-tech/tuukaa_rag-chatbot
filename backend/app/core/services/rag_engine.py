@@ -6,19 +6,20 @@ RAGシステムの中核となる
 
 import gc
 import shutil
-from pathlib import Path
 from typing import Any
+from datetime import datetime
+import uuid
 
 from chromadb.config import Settings as ChromaSettings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from pydantic import SecretStr
 
-from .config import settings
+from ..config import settings
 
 
 class RAGEngine:
@@ -56,6 +57,26 @@ class RAGEngine:
         self.llm: ChatOpenAI | None = None
         self.vectorstore: Chroma | None = None
         self._ensure_directories()
+        self._llm_cache: dict[tuple[str, float], ChatOpenAI] = {}
+
+    def _get_llm(
+        self, model: str | None, temperature: float | None
+    ) -> tuple[ChatOpenAI, str]:
+        """(model, temperature)ごとにLLMをキャッシュして取得"""
+        used_model = model or settings.default_model
+        used_temp = temperature or settings.default_temperature
+        key = (used_model, used_temp)
+
+        if key not in self._llm_cache:
+            api_key = (
+                SecretStr(settings.openai_api_key)
+                if settings.openai_api_key is not None
+                else None
+            )
+            self._llm_cache[key] = ChatOpenAI(
+                model=used_model, temperature=used_temp, api_key=api_key
+            )
+        return self._llm_cache[key], used_model
 
     def _ensure_directories(self) -> None:
         settings.ensure_directories()
@@ -66,15 +87,21 @@ class RAGEngine:
         非同期で初期化することで、起動時の応答性を向上させる
         """
         try:
+            api_key: SecretStr | None = (
+                SecretStr(settings.openai_api_key)
+                if settings.openai_api_key is not None
+                else None
+            )
+
             self.embeddings = OpenAIEmbeddings(
                 model=settings.embedding_model,
-                openai_api_key=settings.openai_api_key,
+                api_key=api_key,
             )
 
             self.llm = ChatOpenAI(
                 model=settings.default_model,
                 temperature=settings.default_temperature,
-                openai_api_key=settings.openai_api_key,
+                api_key=api_key,
             )
 
             await self._load_existing_vectorstore()
@@ -100,14 +127,15 @@ class RAGEngine:
 
         return False
 
-    async def create_vectorstore_from_chunks(self, chunks: list[str]) -> dict[str, Any]:
+    async def create_vectorstore_from_chunks(
+        self, chunks: list[str], filename: str
+    ) -> dict[str, Any]:
         """チャンクからベクトルストア作成
         Args:
-            chunks: テキストチャンクのりすと
-
+            chunks: テキストチャンクのリスト
+            filename: アップロードされたファイル名
         Returns:
             作成結果の情報
-
         Raises:
             RuntimeError: ベクトルストアの作成に失敗した場合
         """
@@ -115,17 +143,35 @@ class RAGEngine:
             raise RuntimeError("RAGエンジンが初期化されていません")
 
         try:
-            await self._cleanup_existing_vectorstore()
+            if not self.vectorstore:
+                await self._load_existing_vectorstore()
 
-            self.vectorstore = Chroma.from_texts(
-                texts=chunks,
-                embedding=self.embeddings,
-                client_settings=self.chroma_settings,
-            )
+            file_id = str(uuid.uuid4())
+            upload_time = datetime.now().isoformat()
+            metadatas = [
+                {
+                    "filename": filename,
+                    "file_id": file_id,
+                    "upload_time": upload_time,
+                    "chunk_index": i,
+                }
+                for i in range(len(chunks))
+            ]
+
+            if not self.vectorstore:
+                # 新規作成
+                self.vectorstore = Chroma.from_texts(
+                    texts=chunks,
+                    embedding=self.embeddings,
+                    metadatas=metadatas,
+                    client_settings=self.chroma_settings,
+                )
+            else:
+                # 既存コレクションに追記
+                await self._add_chunks_to_existing_vectorstore(chunks, metadatas)
 
             self.vectorstore.persist()
-
-            current_uuid = self.vectorstore._collection.id
+            current_uuid = str(self.vectorstore._collection.id)
             await self._cleanup_old_directories(current_uuid)
 
             return {
@@ -133,21 +179,30 @@ class RAGEngine:
                 "chunks_count": len(chunks),
                 "collection_id": current_uuid,
                 "document_count": self.vectorstore._collection.count(),
+                "filename": filename,
             }
 
         except Exception as e:
             raise RuntimeError(f"ベクトルストアの作成に失敗しました: {str(e)}")
 
-    async def _cleanup_existing_vectorstore(self) -> None:
-        """既存のベクトルストア接続をクリーンアップ"""
-        if self.vectorstore:
-            try:
-                self.vectorstore._client.reset()
-            except Exception:
-                pass
-            del self.vectorstore
-            self.vectorstore = None
-            gc.collect()
+    async def _add_chunks_to_existing_vectorstore(
+        self, chunks: list[str], metadatas: list[dict[str, Any]]
+    ) -> None:
+        """既存のベクトルストアにチャンクを追加"""
+        self.vectorstore.add_texts(texts=chunks, metadatas=metadatas)
+
+    # NOTE
+    # ↓はベクトルストアの上書き作成用のメソッドのため利用停止
+    # async def _cleanup_existing_vectorstore(self) -> None:
+    #     """既存のベクトルストア接続をクリーンアップ"""
+    #     if self.vectorstore:
+    #         try:
+    #             self.vectorstore._client.reset()
+    #         except Exception:
+    #             pass
+    #         del self.vectorstore
+    #         self.vectorstore = None
+    #         gc.collect()
 
     async def _cleanup_old_directories(self, keep_uuid: str) -> None:
         """古いUUIDディレクトリを削除
@@ -199,6 +254,8 @@ class RAGEngine:
         self,
         question: str,
         top_k: int | None,
+        model: str | None = None,
+        temperature: float | None = None,
     ) -> dict[str, Any]:
         """RAGによる回答生成
         Args:
@@ -222,16 +279,25 @@ class RAGEngine:
                     "answer": "関連する文書が見つかりませんでした。",
                     "documents": [],
                     "context_used": "",
+                    "llm_model": getattr(self.llm, "model", settings.default_model),
                 }
 
             context = self._format_documents(documents)
+
+            if model is not None or temperature is not None:
+                llm, used_model = self._get_llm(model, temperature)
+            else:
+                llm = self.llm
+                used_model = getattr(
+                    llm, "model", getattr(llm, "model_name", settings.default_model)
+                )
 
             prompt = PromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
 
             rag_chain = (
                 {"context": lambda x: context, "question": RunnablePassthrough()}
                 | prompt
-                | self.llm
+                | llm
                 | StrOutputParser()
             )
 
@@ -244,6 +310,7 @@ class RAGEngine:
                     for doc in documents
                 ],
                 "context_used": context,
+                "llm_model": used_model,
             }
 
         except Exception as e:
@@ -265,7 +332,7 @@ class RAGEngine:
         Returns:
             システム情報の辞書
         """
-        info = {
+        info: dict[str, Any] = {
             "status": "initialized" if self.vectorstore else "not_initialized",
             "embedding_model": settings.embedding_model,
             "llm_model": settings.default_model,
@@ -277,7 +344,7 @@ class RAGEngine:
                 collection = self.vectorstore._collection
                 info.update(
                     {
-                        "collection_id": collection.id,
+                        "collection_id": str(collection.id),
                         "document_count": collection.count(),
                         "vectorstore_ready": True,
                     }
@@ -289,6 +356,81 @@ class RAGEngine:
 
         return info
 
+    async def get_document_list(self) -> dict[str, Any]:
+        """アップロード済みドキュメント一覧を取得"""
+        try:
+            if not self.vectorstore:
+                return {"files": [], "total_files": 0, "total_chunks": 0}
+
+            collection = self.vectorstore._collection
+            results = collection.get(include=["metadatas"])
+            metadatas = results.get("metadatas") or []
+            if not metadatas:
+                return {"files": [], "total_files": 0, "total_chunks": 0}
+
+            file_info_dict: dict[str, dict[str, Any]] = {}
+            for md in metadatas:
+                if not md:
+                    continue
+                fname = md.get("filename", "unknown")
+                if fname not in file_info_dict:
+                    file_info_dict[fname] = {
+                        "filename": fname,
+                        "file_id": md.get("file_id", "unknown"),
+                        "upload_time": md.get("upload_time", "unknown"),
+                        "chunk_count": 0,
+                        "file_size": md.get("file_size", 0),
+                    }
+                file_info_dict[fname]["chunk_count"] += 1
+
+            files_list = list(file_info_dict.values())
+            return {
+                "files": files_list,
+                "total_files": len(files_list),
+                "total_chunks": len(metadatas),
+            }
+        except Exception as e:
+            raise RuntimeError(f"ドキュメント一覧の取得に失敗しました: {str(e)}")
+
+    async def delete_document_by_filename(self, filename: str) -> dict[str, Any]:
+        """ファイル名でドキュメントを削除"""
+        try:
+            if not self.vectorstore:
+                raise RuntimeError("ベクトルストアが初期化されていません")
+
+            collection = self.vectorstore._collection
+            before_count = collection.count()
+
+            results = collection.get(
+                where={"filename": filename}, include=["metadatas"]
+            )
+            ids = results.get("ids") or []
+            if not ids:
+                raise ValueError(f"ファイル '{filename}'は見つかりませんでした")
+
+            deleted_count = len(ids)
+            collection.delete(where={"filename": filename})
+            after_count = collection.count()
+
+            remaining_results = collection.get(include=["metadatas"])
+            metadatas = remaining_results.get("metadatas") or []
+            remaining_files = (
+                len({md.get("filename", "unknown") for md in metadatas if md})
+                if metadatas
+                else 0
+            )
+
+            return {
+                "status": "success",
+                "message": f"ファイル '{filename}'を削除しました",
+                "deleted_filename": filename,
+                "deleted_chunks": deleted_count,
+                "remaining_files": remaining_files,
+                "remaining_chunks": after_count,
+            }
+        except Exception as e:
+            raise RuntimeError(f"ドキュメントの削除に失敗しました: {str(e)}")
+
     async def reset_vectorstore(self) -> dict[str, str]:
         """ベクトルストアをリセット
         Returns:
@@ -296,7 +438,7 @@ class RAGEngine:
         """
         try:
             if self.vectorstore:
-                current_uuid = self.vectorstore._collection.id
+                current_uuid = str(self.vectorstore._collection.id)
                 self.vectorstore._client.reset()
                 await self._cleanup_old_directories(current_uuid)
                 self.vectorstore = None

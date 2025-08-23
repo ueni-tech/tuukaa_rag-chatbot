@@ -12,7 +12,7 @@ import pypdf
 import tiktoken
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-from .config import settings
+from ..config import settings
 
 import asyncio
 

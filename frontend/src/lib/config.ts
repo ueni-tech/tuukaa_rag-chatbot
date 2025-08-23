@@ -1,6 +1,10 @@
 export const config = {
   // クライアントサイドで使用可能
-  apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  // 段階移行: NEXT_PUBLIC_API_BASE を優先し、未設定時は API_URL + BASE_PATH で後方互換
+  apiUrl:
+    process.env.NEXT_PUBLIC_API_BASE ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    'http://localhost:8000',
   apiBasePath: process.env.NEXT_PUBLIC_API_BASE_PATH || '/api/v1',
   appName: process.env.NEXT_PUBLIC_APP_NAME || 'LPナレッジ検索',
   isDebug: process.env.NEXT_PUBLIC_DEBUG === 'true',
