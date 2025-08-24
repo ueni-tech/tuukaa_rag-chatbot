@@ -1,5 +1,5 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -119,4 +119,108 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+@import 'highlight.js/styles/github-dark.css';
+
+/* chat markdown only */
+.chat-prose ol {
+  list-style: decimal;
+}
+.chat-prose ul {
+  list-style: disc;
+}
+.chat-prose ol,
+.chat-prose ul {
+  padding-left: 1.25rem;
+  margin-left: 0;
+}
+.chat-prose li + li {
+  margin-top: 0.25rem;
+}
+.chat-prose li > ol,
+.chat-prose li > ul {
+  margin-top: 0.25rem;
+}
+.chat-prose {
+  line-height: 1.8;
+}
+
+.chat-prose > * + * {
+  margin-top: 1rem;
+}
+
+.chat-prose h1,
+.chat-prose h2,
+.chat-prose h3 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+.chat-prose h4,
+.chat-prose h5,
+.chat-prose h6 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat-prose ul,
+.chat-prose ol {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding-left: 1.25rem;
+}
+.chat-prose li + li {
+  margin-top: 0.25rem;
+}
+.chat-prose li > ul,
+.chat-prose li > ol {
+  margin-top: 0.25rem;
+}
+
+.chat-prose pre,
+.chat-prose blockquote,
+.chat-prose table {
+  margin: 1rem 0;
+}
+
+.chat-prose hr {
+  margin: 1.25rem 0;
+}
+/* chat markdown headings */
+.chat-prose h1 {
+  font-size: 1.75rem;
+  line-height: 1.3;
+  font-weight: 800;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25rem;
+}
+
+.chat-prose h2 {
+  font-size: 1.375rem;
+  line-height: 1.35;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  border-left: 3px solid var(--primary);
+  padding-left: 0.5rem;
+}
+
+.chat-prose h3 {
+  font-size: 1.125rem;
+  line-height: 1.4;
+  font-weight: 700;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: var(--foreground);
+  opacity: 0.9;
+}
+
+.chat-prose h4,
+.chat-prose h5,
+.chat-prose h6 {
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
 }

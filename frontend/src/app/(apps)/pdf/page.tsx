@@ -20,6 +20,36 @@ import {
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { useSettingsStore } from '@/lib/settings-store'
+import dynamic from 'next/dynamic'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
+const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false })
+
+const unwrapMarkdownFence = (s: string) => {
+  if (!s) return s
+  const text = s.replace(/\r\n?/g, '\n').trim()
+  if (!text.startsWith('```')) return text
+  const open = text.match(/^```(?:markdown|md|mdx)?[^\n]*\n?/)
+  if (!open) return text
+  const body = text.slice(open[0].length)
+  return body.replace(/\n?```[\s]*$/, '')
+}
+
+const normalizeMarkdown = (s: string) => {
+  if (!s) return s
+  const parts = s.split(/(```[\s\S]*?```)/g)
+  return parts
+    .map((p, i) => {
+      if (i % 2) return p
+      return p
+        .replace(/\r\n?/g, '\n')
+        .replace(/[\u00A0\u200B\uFEFF]/g, ' ')
+        .replace(/(^|\n)(\d+\.)([^\s])/g, '$1$2 $3')
+        .replace(/(^|\n)([-*+])([^\s])/g, '$1$2 $3')
+        .replace(/([^\n])\n(?=(?:\s*(?:[-*+]\s|\d+\.\s)))/g, '$1\n\n')
+    })
+    .join('')
+}
 
 interface Message {
   id: string
@@ -186,8 +216,15 @@ export default function ChatPage() {
                 </div>
                 <Card className="p-4">
                   {message.content ? (
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      {message.content}
+                    <div className="prose prose-sm max-w-none dark:prose-invert chat-prose">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeHighlight]}
+                      >
+                        {normalizeMarkdown(
+                          unwrapMarkdownFence(message.content)
+                        )}
+                      </ReactMarkdown>
                       {message.llm_model ? (
                         <div className="mt-1 text-xs text-muted-foreground">
                           Model: {message.llm_model}
@@ -199,7 +236,6 @@ export default function ChatPage() {
                   ) : (
                     ''
                   )}
-
                   {/* 参照された文書を表示 */}
                   {message.documents && message.documents.length > 0 && (
                     <div className="mt-3 space-y-2 text-xs text-muted-foreground">
