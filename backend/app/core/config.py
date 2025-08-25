@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # ===== Embed Domain (placeholders) =====
     embed_collection_prefix: str | None = None
     embed_allowed_origins: str | None = "*"
+    embed_api_keys: str | None = None
+    rate_limit_rpm: int = 60
+    daily_budget_jpy: float = 0.0
 
     class ConfigDict:
         env_file = ".env"
@@ -70,6 +73,27 @@ class Settings(BaseSettings):
         """必要なディレクトリを作成"""
         self.persist_path.mkdir(parents=True, exist_ok=True)
         self.upload_path.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def embed_api_keys_map(self) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+        raw = (self.embed_api_keys or "").strip()
+        if not raw:
+            return mapping
+        for pair in raw.split(","):
+            if ":" not in pair:
+                continue
+            client, key = pair.split(":", 1)
+            client, key = client.strip(), key.strip()
+            if client and key:
+                mapping[client] = key
+        return mapping
+
+    @property
+    def embed_allowed_origins_list(self) -> list[str]:
+        raw = os.getenv("ALLOWED_ORIGINS") or (self.embed_allowed_origins or "*")
+        items = [o.strip() for o in raw.split(",") if o.strip()]
+        return items or ["*"]
 
 
 settings = Settings()
