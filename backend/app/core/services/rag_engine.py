@@ -129,12 +129,20 @@ class RAGEngine:
         return False
 
     async def create_vectorstore_from_chunks(
-        self, chunks: list[str], filename: str
+        self,
+        chunks: list[str],
+        filename: str,
+        tenant: str | None = None,
+        source_type: str | None = None,
+        source: str | None = None,
     ) -> dict[str, Any]:
         """チャンクからベクトルストア作成
         Args:
             chunks: テキストチャンクのリスト
             filename: アップロードされたファイル名
+            tenant: クライアントの識別子
+            source_type: ファイルの種類
+            source: ファイルへのパス
         Returns:
             作成結果の情報
         Raises:
@@ -149,15 +157,21 @@ class RAGEngine:
 
             file_id = str(uuid.uuid4())
             upload_time = datetime.now().isoformat()
-            metadatas = [
-                {
+            metadatas = []
+            for i in range(len(chunks)):
+                md = {
                     "filename": filename,
                     "file_id": file_id,
                     "upload_time": upload_time,
                     "chunk_index": i,
                 }
-                for i in range(len(chunks))
-            ]
+                if tenant is not None:
+                    md["tenant"] = tenant
+                if source_type is not None:
+                    md["source_type"] = source_type
+                if source is not None:
+                    md["source"] = source
+                metadatas.append(md)
 
             if not self.vectorstore:
                 # 新規作成
@@ -223,7 +237,7 @@ class RAGEngine:
             pass
 
     async def search_documents(
-        self, query: str, top_k: int | None = None
+        self, query: str, top_k: int | None = None, tenant: str | None = None
     ) -> list[Document]:
         """文書検索
         Args:
@@ -242,8 +256,11 @@ class RAGEngine:
         k = top_k or settings.default_top_k
 
         try:
+            kwargs: dict[str, Any] = {"k": k}
+            if tenant is not None:
+                kwargs["filter"] = {"tenant": tenant}
             retriever = self.vectorstore.as_retriever(
-                search_type="similarity", search_kwargs={"k": k}
+                search_type="similarity", search_kwargs=kwargs
             )
             documents = retriever.invoke(query)
             return documents
@@ -257,6 +274,7 @@ class RAGEngine:
         top_k: int | None,
         model: str | None = None,
         temperature: float | None = None,
+        tenant: str | None = None,
     ) -> dict[str, Any]:
         """RAGによる回答生成
         Args:
@@ -273,7 +291,7 @@ class RAGEngine:
             raise RuntimeError("RAGエンジンが初期化されていません")
 
         try:
-            documents = await self.search_documents(question, top_k)
+            documents = await self.search_documents(question, top_k, tenant=tenant)
 
             if not documents:
                 return {
