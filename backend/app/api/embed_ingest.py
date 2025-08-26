@@ -6,7 +6,7 @@ import urllib.request
 import codecs
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 from ..core.config import settings
@@ -118,23 +118,40 @@ async def ingest_url(
 
 
 @router.post("/markdown")
-async def ingest_md(
-    p: MdReq,
+async def ingest_md_file(
+    file: UploadFile = File(...),
+    chunk_size: int | None = Form(None),
+    chunk_overlap: int | None = Form(None),
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=False),
 ) -> dict[str, Any]:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
-    title = (p.title or "markdown").strip()
 
-    chunk_size = p.chunk_size or settings.max_chunk_size
-    chunk_overlap = p.chunk_overlap or settings.chunk_overlap
-    chunks = dp.split_text(
-        _normalize(p.markdown), chunk_size=chunk_size, chunk_overlap=chunk_overlap
-    )
+    fname = (file.filename or "").lower()
+    if not (fname.endswith(".md") or fname.endswith(".markdown")):
+        raise HTTPException(
+            400, "Markdown(.md/.markdown)ファイルのみアップロード可能です"
+        )
+
+    MAX_BYTES = 2 * 1024 * 1024
+    content = await file.read()
+    if len(content) > MAX_BYTES:
+        raise HTTPException(413, "本文が大きすぎます")
+
+    enc = "utf-8-sig" if content.startswith(codecs.BOM_UTF8) else "utf-8"
+    text = _normalize(content.decode(enc, errors="replace"))
+
+    cs = chunk_size or settings.max_chunk_size
+    co = chunk_overlap or settings.chunk_overlap
+    chunks = dp.split_text(text, chunk_size=cs, chunk_overlap=co)
 
     res = await rag.create_vectorstore_from_chunks(
-        chunks, filename=title, tenant=tenant, source_type="markdown", source=title
+        chunks,
+        filename=file.filename,
+        tenant=tenant,
+        source_type="markdown",
+        source=file.filename,
     )
     return {**res, "tenant": tenant}
