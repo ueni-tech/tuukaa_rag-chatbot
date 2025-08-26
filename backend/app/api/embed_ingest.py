@@ -1,0 +1,140 @@
+# backend/app/api/embed_ingest.py
+from __future__ import annotations
+
+import re
+import urllib.request
+import codecs
+from typing import Any
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel
+
+from ..core.config import settings
+from ..core.web.dependencies import get_rag_engine
+from ..core.services.rag_engine import RAGEngine
+from ..core.services.document_processor import DocumentProcessor
+
+router = APIRouter(prefix="/embed/docs", tags=["EmbedDocs"])
+
+dp = DocumentProcessor()
+
+
+def _tenant_from_key(key: str | None) -> str | None:
+    if not key:
+        return None
+    for tenant, k in settings.embed_api_keys_map.items():
+        if k == key:
+            return tenant
+    return None
+
+
+def _normalize(text: str) -> str:
+    text = re.sub(r"\r\n|\r|\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _strip_tags(html: str) -> str:
+    html = re.sub(
+        r"\s*<\s*(script|style)\b[\s\S]*?<\s*/\s*\1\s*>\s*",
+        " ",
+        html,
+        flags=re.I,
+    )
+    html = re.sub(
+        r"\s*<\s*noscript\b[\s\S]*?<\s*/\s*noscript\s*>\s*",
+        " ",
+        html,
+        flags=re.I,
+    )
+    return _normalize(re.sub(r"<[^>]+>", " ", html))
+
+
+class UrlReq(BaseModel):
+    url: str
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+
+
+class MdReq(BaseModel):
+    title: str | None = None
+    markdown: str
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+
+
+@router.post("/url")
+async def ingest_url(
+    p: UrlReq,
+    rag: RAGEngine = Depends(get_rag_engine),
+    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+) -> dict[str, Any]:
+    tenant = _tenant_from_key(x_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+    try:
+        with urllib.request.urlopen(p.url, timeout=20) as r:
+            MAX_BYTES = 2 * 1024 * 1024
+            cl = r.headers.get("Content-Length")
+            if cl:
+                try:
+                    if int(cl) > MAX_BYTES:
+                        raise HTTPException(413, "本文が大きすぎます")
+                except ValueError:
+                    pass
+
+            buf = r.read(MAX_BYTES + 1)
+            if len(buf) > MAX_BYTES:
+                raise HTTPException(413, "本文が大きすぎます")
+
+            enc = None
+            try:
+                enc = r.headers.get_content_charset()
+            except Exception:
+                pass
+            if not enc:
+                if buf.startswith(codecs.BOM_UTF8):
+                    enc = "utf-8-sig"
+                else:
+                    enc = "utf-8"
+
+            html = bytes(buf).decode(enc, errors="replace")
+    except Exception as e:
+        raise HTTPException(400, f"URL取得に失敗: {e}")
+
+    text = _strip_tags(html)
+    if not text:
+        raise HTTPException(400, f"本文抽出に失敗しました")
+
+    chunk_size = p.chunk_size or settings.max_chunk_size
+    chunk_overlap = p.chunk_overlap or settings.chunk_overlap
+    chunks = dp.split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+    res = await rag.create_vectorstore_from_chunks(
+        chunks, filename=p.url, tenant=tenant, source_type="url", source=p.url
+    )
+    return {**res, "tenant": tenant}
+
+
+@router.post("/markdown")
+async def ingest_md(
+    p: MdReq,
+    rag: RAGEngine = Depends(get_rag_engine),
+    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+) -> dict[str, Any]:
+    tenant = _tenant_from_key(x_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+    title = (p.title or "markdown").strip()
+
+    chunk_size = p.chunk_size or settings.max_chunk_size
+    chunk_overlap = p.chunk_overlap or settings.chunk_overlap
+    chunks = dp.split_text(
+        _normalize(p.markdown), chunk_size=chunk_size, chunk_overlap=chunk_overlap
+    )
+
+    res = await rag.create_vectorstore_from_chunks(
+        chunks, filename=title, tenant=tenant, source_type="markdown", source=title
+    )
+    return {**res, "tenant": tenant}
