@@ -28,7 +28,7 @@ class RAGEngine:
     """
 
     # RAG用プロンプトテンプレート
-    RAG_PROMPT_TEMPLATE = """\
+    RAG_PROMPT_TEMPLATE = """\\
 あなたは優秀な社内ルールのアシスタントです。
 提供されたコンテキスト情報を基に、ユーザーの質問に正確で実用的な回答を提供してください。
 
@@ -375,14 +375,15 @@ class RAGEngine:
 
         return info
 
-    async def get_document_list(self) -> dict[str, Any]:
+    async def get_document_list(self, tenant: str | None = None) -> dict[str, Any]:
         """アップロード済みドキュメント一覧を取得"""
         try:
             if not self.vectorstore:
                 return {"files": [], "total_files": 0, "total_chunks": 0}
 
             collection = self.vectorstore._collection
-            results = collection.get(include=["metadatas"])
+            where = {"tenant": tenant} if tenant is not None else None
+            results = collection.get(include=["metadatas"], where=where)
             metadatas = results.get("metadatas") or []
             if not metadatas:
                 return {"files": [], "total_files": 0, "total_chunks": 0}
@@ -411,27 +412,32 @@ class RAGEngine:
         except Exception as e:
             raise RuntimeError(f"ドキュメント一覧の取得に失敗しました: {str(e)}")
 
-    async def delete_document_by_filename(self, filename: str) -> dict[str, Any]:
+    async def delete_document_by_filename(
+        self, filename: str, tenant: str | None = None
+    ) -> dict[str, Any]:
         """ファイル名でドキュメントを削除"""
         try:
             if not self.vectorstore:
                 raise RuntimeError("ベクトルストアが初期化されていません")
 
             collection = self.vectorstore._collection
-            before_count = collection.count()
+            where: dict[str, Any] = {"filename": filename}
+            if tenant is not None:
+                where["tenant"] = tenant
 
-            results = collection.get(
-                where={"filename": filename}, include=["metadatas"]
-            )
+            results = collection.get(where=where, include=["metadatas"])
             ids = results.get("ids") or []
             if not ids:
                 raise ValueError(f"ファイル '{filename}'は見つかりませんでした")
 
             deleted_count = len(ids)
-            collection.delete(where={"filename": filename})
+            collection.delete(where=where)
             after_count = collection.count()
 
-            remaining_results = collection.get(include=["metadatas"])
+            remaining_where = {"tenant": tenant} if tenant is not None else None
+            remaining_results = collection.get(
+                include=["metadatas"], where=remaining_where
+            )
             metadatas = remaining_results.get("metadatas") or []
             remaining_files = (
                 len({md.get("filename", "unknown") for md in metadatas if md})
