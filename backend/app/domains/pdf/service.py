@@ -27,7 +27,9 @@ async def ingest_pdf_to_vectorstore(
     既存の `DocumentProcessor` と `RAGEngine.create_vectorstore_from_chunks` を利用。
     振る舞いは既存エンドポイントと同等。
     """
-    text = await document_processor.extract_text_form_pdf(pdf_path)
+    with open(pdf_path, "rb") as f:
+        data = f.read()
+    text = await document_processor.extract_text_from_pdf(data)
     chunks = document_processor.split_text(text, chunk_size, chunk_overlap)
     vectorstore_info = await rag_engine.create_vectorstore_from_chunks(chunks, filename)
     return {

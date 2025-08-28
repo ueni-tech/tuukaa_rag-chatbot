@@ -5,15 +5,26 @@ import asyncio
 
 
 @pytest.mark.asyncio
-async def test_extract_text_form_pdf():
+async def test_extract_text_from_pdf_bytes():
     processor = DocumentProcessor()
-    # 既存のサンプルPDFがある場合のみ検証。なければスキップ（環境依存回避）。
+    path = Path("uploads") / "sample.pdf"
+    if not path.exists():
+        pytest.skip("sample.pdf が存在しないためスキップ")
+    data = path.read_bytes()
+    text = await processor.extract_text_from_pdf(data)
+    assert isinstance(text, str)
+    assert len(text) > 0
+
+
+@pytest.mark.asyncio
+async def test_extract_text_form_pdf_wrapper_kept():
+    processor = DocumentProcessor()
     path = Path("uploads") / "sample.pdf"
     if not path.exists():
         pytest.skip("sample.pdf が存在しないためスキップ")
     text = await processor.extract_text_form_pdf(path)
     assert isinstance(text, str)
-    assert len(text) > 0  # テキストが抽出できていること
+    assert len(text) > 0
 
 
 def test_split_text():
