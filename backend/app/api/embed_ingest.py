@@ -1,4 +1,3 @@
-# backend/app/api/embed_ingest.py
 from __future__ import annotations
 
 import re
@@ -13,6 +12,19 @@ from ..core.config import settings
 from ..core.web.dependencies import get_rag_engine
 from ..core.services.rag_engine import RAGEngine
 from ..core.services.document_processor import DocumentProcessor
+
+from ..models.schemas import (
+    QuestionRequest,
+    SearchResponse,
+    DocumentInfo,
+    AnswerResponse,
+    DocumentListResponse,
+    DeleteDocumentRequest,
+    DeleteDocumentResponse,
+    SystemInfoResponse,
+    UrlRequest,
+    GenericUploadResponse,
+)
 
 router = APIRouter(prefix="/embed/docs", tags=["EmbedDocs"])
 
@@ -51,22 +63,9 @@ def _strip_tags(html: str) -> str:
     return _normalize(re.sub(r"<[^>]+>", " ", html))
 
 
-class UrlReq(BaseModel):
-    url: str
-    chunk_size: int | None = None
-    chunk_overlap: int | None = None
-
-
-class MdReq(BaseModel):
-    title: str | None = None
-    markdown: str
-    chunk_size: int | None = None
-    chunk_overlap: int | None = None
-
-
 @router.post("/url")
 async def ingest_url(
-    p: UrlReq,
+    p: UrlRequest,
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=False),
 ) -> dict[str, Any]:
@@ -117,41 +116,66 @@ async def ingest_url(
     return {**res, "tenant": tenant}
 
 
-@router.post("/markdown")
-async def ingest_md_file(
+# NOTE
+# 汎用アップロード
+# pdf/md/markdown/txt/docx/pptx
+@router.post("/upload", response_class=GenericUploadResponse)
+async def ingest_any_file(
     file: UploadFile = File(...),
     chunk_size: int | None = Form(None),
     chunk_overlap: int | None = Form(None),
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=False),
-) -> dict[str, Any]:
+) -> GenericUploadResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
 
     fname = (file.filename or "").lower()
-    if not (fname.endswith(".md") or fname.endswith(".markdown")):
-        raise HTTPException(
-            400, "Markdown(.md/.markdown)ファイルのみアップロード可能です"
-        )
+    ext = fname.rsplit(".", 1)[-1] if "." in fname else ""
 
-    MAX_BYTES = 2 * 1024 * 1024
+    MAX = {
+        "pdf": 10 * 1024 * 1024,
+        "docx": 10 * 1024 * 1024,
+        "pptx": 10 * 1024 * 1024,
+        "md": 2 * 1024 * 1024,
+        "markdown": 2 * 1024 * 1024,
+        "txt": 2 * 1024 * 1024,
+    }
     content = await file.read()
-    if len(content) > MAX_BYTES:
-        raise HTTPException(413, "本文が大きすぎます")
-
-    enc = "utf-8-sig" if content.startswith(codecs.BOM_UTF8) else "utf-8"
-    text = _normalize(content.decode(enc, errors="replace"))
+    max_bytes = MAX.get(ext, 2 * 1024 * 1024)
+    if len(content) > max_bytes:
+        raise HTTPException(413, "ファイルサイズ上限を超えています")
 
     cs = chunk_size or settings.max_chunk_size
     co = chunk_overlap or settings.chunk_overlap
-    chunks = dp.split_text(text, chunk_size=cs, chunk_overlap=co)
 
+    text = None
+    if ext in ("md", "markdown"):
+        enc = "utf-8-sig" if content.startswith(codecs.BOM_UTF8) else "utf-8"
+        text = _normalize(content.decode(enc, errors="replace"))
+        source_type = "markdown"
+    elif ext == "txt":
+        text = _normalize(dp.extract_text_from_txt_bytes(content))
+        source_type = "text"
+    elif ext == "docx":
+        text = _normalize(dp.extract_text_from_docx_bytes(content))
+        source_type = "docx"
+    elif ext == "pptx":
+        text = _normalize(dp.extract_text_from_pptx_bytes(content))
+        source_type = "pptx"
+    elif ext == "pdf":
+        text = _normalize(dp.extract_text_from_pdf(content))
+        source_type = "pdf"
+    else:
+        raise HTTPException(400, "未対応の拡張子です（pdf/md/markdown/txt/docx/pptx）")
+
+    chunks = dp.split_text(text, chunk_size=cs, chunk_overlap=co)
     res = await rag.create_vectorstore_from_chunks(
         chunks,
         filename=file.filename,
         tenant=tenant,
-        source_type="markdown",
+        source_type=source_type,
         source=file.filename,
     )
-    return {**res, "tenant": tenant}
+    return GenericUploadResponse(**res, tenant=tenant)

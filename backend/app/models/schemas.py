@@ -3,7 +3,7 @@ APIスキーマ定義
 FastAPIのリクエスト/レスポンスモデルの定義
 """
 
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -13,6 +13,8 @@ __all__ = [
     "SearchResponse",
     "AnswerResponse",
     "UploadResponse",
+    "GenericUploadResponse",
+    "UploadFormParams",
     "FileInfo",
     "DocumentListResponse",
     "DeleteDocumentRequest",
@@ -20,6 +22,7 @@ __all__ = [
     "SystemInfoResponse",
     "ErrorResponse",
     "HealthResponse",
+    "UrlRequest",
 ]
 
 
@@ -111,3 +114,18 @@ class HealthResponse(BaseModel):
     status: str = Field(..., description="サービスステータス")
     version: str = Field(..., description="アプリケーションバージョン")
     timestamp: str = Field(..., description="チェック時刻")
+
+
+class UrlRequest(BaseModel):
+    url: str = Field(..., description="テキスト抽出対象のURL")
+    chunk_size: int | None = Field(None, description="チャンクサイズ")
+    chunk_overlap: int | None = Field(None, description="チャンクオーバーラップ")
+
+
+class GenericUploadResponse(BaseModel):
+    status: Literal["success"] = Field(..., description="処理ステータス")
+    chunks_count: int = Field(..., description="作成されたチャンク数")
+    collection_id: str = Field(..., description="ChromaコレクションID")
+    document_count: int = Field(..., description="コレクション内ドキュメント数")
+    filename: str = Field(..., description="元ファイル名")
+    tenant: str | None = Field(None, description="テナント識別子")
