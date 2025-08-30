@@ -63,59 +63,6 @@ def _strip_tags(html: str) -> str:
     return _normalize(re.sub(r"<[^>]+>", " ", html))
 
 
-@router.post("/url")
-async def ingest_url(
-    p: UrlRequest,
-    rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
-) -> dict[str, Any]:
-    tenant = _tenant_from_key(x_embed_key)
-    if not tenant:
-        raise HTTPException(401, "無効な埋め込みキーです")
-    try:
-        with urllib.request.urlopen(p.url, timeout=20) as r:
-            MAX_BYTES = 2 * 1024 * 1024
-            cl = r.headers.get("Content-Length")
-            if cl:
-                try:
-                    if int(cl) > MAX_BYTES:
-                        raise HTTPException(413, "本文が大きすぎます")
-                except ValueError:
-                    pass
-
-            buf = r.read(MAX_BYTES + 1)
-            if len(buf) > MAX_BYTES:
-                raise HTTPException(413, "本文が大きすぎます")
-
-            enc = None
-            try:
-                enc = r.headers.get_content_charset()
-            except Exception:
-                pass
-            if not enc:
-                if buf.startswith(codecs.BOM_UTF8):
-                    enc = "utf-8-sig"
-                else:
-                    enc = "utf-8"
-
-            html = bytes(buf).decode(enc, errors="replace")
-    except Exception as e:
-        raise HTTPException(400, f"URL取得に失敗: {e}")
-
-    text = _strip_tags(html)
-    if not text:
-        raise HTTPException(400, f"本文抽出に失敗しました")
-
-    chunk_size = p.chunk_size or settings.max_chunk_size
-    chunk_overlap = p.chunk_overlap or settings.chunk_overlap
-    chunks = dp.split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-
-    res = await rag.create_vectorstore_from_chunks(
-        chunks, filename=p.url, tenant=tenant, source_type="url", source=p.url
-    )
-    return {**res, "tenant": tenant}
-
-
 # NOTE
 # 汎用アップロード
 # pdf/md/markdown/txt/docx/pptx
@@ -179,3 +126,156 @@ async def ingest_any_file(
         source=file.filename,
     )
     return GenericUploadResponse(**res, tenant=tenant)
+
+
+# NOTE
+# URLアップロード
+@router.post("/url")
+async def ingest_url(
+    p: UrlRequest,
+    rag: RAGEngine = Depends(get_rag_engine),
+    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+) -> dict[str, Any]:
+    tenant = _tenant_from_key(x_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+    try:
+        with urllib.request.urlopen(p.url, timeout=20) as r:
+            MAX_BYTES = 2 * 1024 * 1024
+            cl = r.headers.get("Content-Length")
+            if cl:
+                try:
+                    if int(cl) > MAX_BYTES:
+                        raise HTTPException(413, "本文が大きすぎます")
+                except ValueError:
+                    pass
+
+            buf = r.read(MAX_BYTES + 1)
+            if len(buf) > MAX_BYTES:
+                raise HTTPException(413, "本文が大きすぎます")
+
+            enc = None
+            try:
+                enc = r.headers.get_content_charset()
+            except Exception:
+                pass
+            if not enc:
+                if buf.startswith(codecs.BOM_UTF8):
+                    enc = "utf-8-sig"
+                else:
+                    enc = "utf-8"
+
+            html = bytes(buf).decode(enc, errors="replace")
+    except Exception as e:
+        raise HTTPException(400, f"URL取得に失敗: {e}")
+
+    text = _strip_tags(html)
+    if not text:
+        raise HTTPException(400, f"本文抽出に失敗しました")
+
+    chunk_size = p.chunk_size or settings.max_chunk_size
+    chunk_overlap = p.chunk_overlap or settings.chunk_overlap
+    chunks = dp.split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+    res = await rag.create_vectorstore_from_chunks(
+        chunks, filename=p.url, tenant=tenant, source_type="url", source=p.url
+    )
+    return {**res, "tenant": tenant}
+
+
+@router.post("/search", response_model=SearchResponse)
+async def docs_search(
+    req: QuestionRequest,
+    rag: RAGEngine = Depends(get_rag_engine),
+    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+) -> SearchResponse:
+    tenant = _tenant_from_key(x_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+    docs = await rag.search_documents(req.question, req.top_k, tenant=tenant)
+    items = [DocumentInfo(content=d.page_content, matadata=d.metadata) for d in docs]
+    return SearchResponse(documents=items, query=req.question, total_found=len(items))
+
+
+@router.post("/ask", response_model=AnswerResponse)
+async def docs_ask(
+    req: QuestionRequest,
+    rag: RAGEngine = Depends(get_rag_engine),
+    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+) -> AnswerResponse:
+    tenant = _tenant_from_key(x_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+    result = await rag.generate_answer(
+        question=req.question,
+        top_k=req.top_k,
+        model=req.model,
+        temperature=req.temperature,
+        tenant=tenant,
+    )
+    return AnswerResponse(
+        answer=result["answer"],
+        question=req.question,
+        documents=[
+            DocumentInfo(content=d["content"], metadata=d["metadata"])
+            for d in result["documents"]
+        ],
+        context_used=result["context_used"],
+        llm_model=result["llm_model"],
+    )
+
+
+@router.get("/documents", response_model=DocumentListResponse)
+async def docs_list(
+    rag: RAGEngine = Depends(get_rag_engine),
+    X_embed_key: str | None = Header(default=None, convert_underscores=False),
+) -> DocumentListResponse:
+    tenant = _tenant_from_key(X_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+    result = await rag.get_document_list(tenant=tenant)
+    return DocumentListResponse(
+        files=result["files"],
+        total_files=result["total_files"],
+        total_chunks=result["total_chunks"],
+    )
+
+
+@router.delete("/documents", response_model=DeleteDocumentResponse)
+async def docs_delete(
+    req: DeleteDocumentRequest,
+    rag: RAGEngine = Depends(get_rag_engine),
+    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+) -> DeleteDocumentResponse:
+    tenant = _tenant_from_key(X_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+    result = await rag.delete_document_by_filename(req.filename, tenant=tenant)
+    return DeleteDocumentResponse(
+        status=result["status"],
+        message=result["message"],
+        deleted_filename=result["deleted_filename"],
+        remaining_files=result["remaining_files"],
+    )
+
+
+@router.get("/system/info", response_model=SystemInfoResponse)
+async def docs_system_info(
+    rag: RAGEngine = Depends(get_rag_engine),
+) -> SystemInfoResponse:
+    info = await rag.get_system_info()
+    return SystemInfoResponse(
+        status=info["status"],
+        embedding_model=info["embedding_model"],
+        llm_model=info["llm_model"],
+        vectorstore_ready=info["vectorstore_ready"],
+        document_count=info.get("document_count"),
+        collection_id=info.get("collection_id"),
+    )
+
+
+@router.post("/system/reset")
+async def docs_system_reset(
+    rag: RAGEngine = Depends(get_rag_engine),
+) -> dict[str, str]:
+    return await rag.reset_vectorstore()
