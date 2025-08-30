@@ -66,7 +66,7 @@ def _strip_tags(html: str) -> str:
 # NOTE
 # 汎用アップロード
 # pdf/md/markdown/txt/docx/pptx
-@router.post("/upload", response_class=GenericUploadResponse)
+@router.post("/upload", response_model=GenericUploadResponse)
 async def ingest_any_file(
     file: UploadFile = File(...),
     chunk_size: int | None = Form(None),
@@ -193,7 +193,7 @@ async def docs_search(
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
     docs = await rag.search_documents(req.question, req.top_k, tenant=tenant)
-    items = [DocumentInfo(content=d.page_content, matadata=d.metadata) for d in docs]
+    items = [DocumentInfo(content=d.page_content, metadata=d.metadata) for d in docs]
     return SearchResponse(documents=items, query=req.question, total_found=len(items))
 
 
@@ -247,7 +247,7 @@ async def docs_delete(
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=False),
 ) -> DeleteDocumentResponse:
-    tenant = _tenant_from_key(X_embed_key)
+    tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
     result = await rag.delete_document_by_filename(req.filename, tenant=tenant)
