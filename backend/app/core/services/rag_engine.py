@@ -383,9 +383,10 @@ class RAGEngine:
                 return {"files": [], "total_files": 0, "total_chunks": 0}
 
             collection = self.vectorstore._collection
-            where = {"tenant": tenant} if tenant is not None else None
+            where = {"tenant": {"$eq": tenant}} if tenant is not None else None
             results = collection.get(include=["metadatas"], where=where)
             metadatas = results.get("metadatas") or []
+
             if not metadatas:
                 return {"files": [], "total_files": 0, "total_chunks": 0}
 
@@ -422,9 +423,10 @@ class RAGEngine:
                 raise RuntimeError("ベクトルストアが初期化されていません")
 
             collection = self.vectorstore._collection
-            where: dict[str, Any] = {"filename": filename}
+            conditions = [{"filename": {"$eq": filename}}]
             if tenant is not None:
-                where["tenant"] = tenant
+                conditions.append({"tenant": {"$eq": tenant}})
+            where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
 
             results = collection.get(where=where, include=["metadatas"])
             ids = results.get("ids") or []
@@ -435,10 +437,13 @@ class RAGEngine:
             collection.delete(where=where)
             after_count = collection.count()
 
-            remaining_where = {"tenant": tenant} if tenant is not None else None
+            remaining_where = (
+                {"tenant": {"$eq": tenant}} if tenant is not None else None
+            )
             remaining_results = collection.get(
                 include=["metadatas"], where=remaining_where
             )
+
             metadatas = remaining_results.get("metadatas") or []
             remaining_files = (
                 len({md.get("filename", "unknown") for md in metadatas if md})
