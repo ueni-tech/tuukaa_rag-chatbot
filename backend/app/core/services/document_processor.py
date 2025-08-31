@@ -31,7 +31,7 @@ class DocumentProcessor:
             length_function=len,
         )
 
-    async def extract_text_from_pdf(self, data: bytes) -> str:
+    def extract_text_from_pdf(self, data: bytes) -> str:
         """PDFからテキスト抽出"""
         try:
             reader = pypdf.PdfReader(io.BytesIO(data))
