@@ -86,13 +86,17 @@ class DocumentListResponse(BaseModel):
 
 class DeleteDocumentRequest(BaseModel):
     filename: str = Field(..., min_length=1, description="削除するファイル名")
+    file_id: str = Field(..., min_length=1, description="削除するfile_id")
 
 
 class DeleteDocumentResponse(BaseModel):
     status: str = Field(..., description="削除ステータス")
     message: str = Field(..., description="削除結果メッセージ")
-    deleted_filename: str = Field(..., description="削除されたファイル名")
-    remaining_files: int = Field(..., description="残りファイル数")
+    deleted_filename: str | None = Field(None, description="削除されたファイル名")
+    deleted_file_id: str | None = Field(None, description="削除されたfile_id")
+    deleted_chunks: int | None = Field(None, description="削除チャンク数")
+    remaining_files: int | None = Field(None, description="残りファイル数")
+    remaining_chunks: int | None = Field(None, description="残りチャンク数")
 
 
 class SystemInfoResponse(BaseModel):

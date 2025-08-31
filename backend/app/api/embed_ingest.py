@@ -250,13 +250,20 @@ async def docs_delete(
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
-    result = await rag.delete_document_by_filename(req.filename, tenant=tenant)
-    return DeleteDocumentResponse(
-        status=result["status"],
-        message=result["message"],
-        deleted_filename=result["deleted_filename"],
-        remaining_files=result["remaining_files"],
-    )
+    # tenant + filename + file_id で削除
+    if req.file_id and req.filename:
+        result = await rag.delete_document_by_file_id(req.file_id, tenant=tenant)
+        return DeleteDocumentResponse(
+            status=result["status"],
+            message=result["message"],
+            deleted_file_id=req.file_id,
+            deleted_filename=req.filename,
+            deleted_chunks=result.get("deleted_chunks"),
+            remaining_files=result.get("remaining_files"),
+            remaining_chunks=result.get("remaining_chunks"),
+        )
+
+    raise HTTPException(400, "filename と file_id を指定してください")
 
 
 @router.get("/system/info", response_model=SystemInfoResponse)

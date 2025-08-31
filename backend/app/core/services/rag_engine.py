@@ -414,16 +414,16 @@ class RAGEngine:
         except Exception as e:
             raise RuntimeError(f"ドキュメント一覧の取得に失敗しました: {str(e)}")
 
-    async def delete_document_by_filename(
-        self, filename: str, tenant: str | None = None
+    async def delete_document_by_file_id(
+        self, file_id: str, tenant: str | None = None
     ) -> dict[str, Any]:
-        """ファイル名でドキュメントを削除"""
+        """file_idでドキュメントを削除（推奨）"""
         try:
             if not self.vectorstore:
                 raise RuntimeError("ベクトルストアが初期化されていません")
 
             collection = self.vectorstore._collection
-            conditions = [{"filename": {"$eq": filename}}]
+            conditions = [{"file_id": {"$eq": file_id}}]
             if tenant is not None:
                 conditions.append({"tenant": {"$eq": tenant}})
             where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
@@ -431,7 +431,15 @@ class RAGEngine:
             results = collection.get(where=where, include=["metadatas"])
             ids = results.get("ids") or []
             if not ids:
-                raise ValueError(f"ファイル '{filename}'は見つかりませんでした")
+                raise ValueError(f"file_id '{file_id}' は見つかりませんでした")
+
+            # 表示用に代表となるファイル名を抽出
+            metadatas = results.get("metadatas") or []
+            detected_filename = "unknown"
+            for md in metadatas:
+                if md and md.get("filename"):
+                    detected_filename = md.get("filename")
+                    break
 
             deleted_count = len(ids)
             collection.delete(where=where)
@@ -443,7 +451,6 @@ class RAGEngine:
             remaining_results = collection.get(
                 include=["metadatas"], where=remaining_where
             )
-
             metadatas = remaining_results.get("metadatas") or []
             remaining_files = (
                 len({md.get("filename", "unknown") for md in metadatas if md})
@@ -453,14 +460,14 @@ class RAGEngine:
 
             return {
                 "status": "success",
-                "message": f"ファイル '{filename}'を削除しました",
-                "deleted_filename": filename,
+                "message": f"{detected_filename}({file_id})を削除しました",
+                "deleted_file_id": file_id,
                 "deleted_chunks": deleted_count,
                 "remaining_files": remaining_files,
                 "remaining_chunks": after_count,
             }
         except Exception as e:
-            raise RuntimeError(f"ドキュメントの削除に失敗しました: {str(e)}")
+            raise RuntimeError(f"file_id削除に失敗しました: {str(e)}")
 
     async def reset_vectorstore(self) -> dict[str, str]:
         """ベクトルストアをリセット
