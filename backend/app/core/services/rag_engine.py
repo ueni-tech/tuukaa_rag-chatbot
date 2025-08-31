@@ -65,9 +65,10 @@ class RAGEngine:
     ) -> tuple[ChatOpenAI, str]:
         """(model, temperature)ごとにLLMをキャッシュして取得"""
         used_model = model or settings.default_model
-        used_temp = temperature or settings.default_temperature
+        used_temp = (
+            temperature if temperature is not None else settings.default_temperature
+        )
         key = (used_model, used_temp)
-
         if key not in self._llm_cache:
             api_key = (
                 SecretStr(settings.openai_api_key)
@@ -75,7 +76,7 @@ class RAGEngine:
                 else None
             )
             self._llm_cache[key] = ChatOpenAI(
-                model=used_model, temperature=used_temp, api_key=api_key
+                model=used_model, temperature=used_temp, api_key=api_key, timeout=60
             )
         return self._llm_cache[key], used_model
 
@@ -262,7 +263,7 @@ class RAGEngine:
             retriever = self.vectorstore.as_retriever(
                 search_type="similarity", search_kwargs=kwargs
             )
-            documents = retriever.invoke(query)
+            documents = await retriever.ainvoke(query)
             return documents
 
         except Exception as e:
@@ -320,7 +321,7 @@ class RAGEngine:
                 | StrOutputParser()
             )
 
-            answer = rag_chain.invoke(question)
+            answer = await rag_chain.ainvoke(question)
 
             return {
                 "answer": answer,
