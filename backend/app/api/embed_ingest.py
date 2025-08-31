@@ -269,7 +269,7 @@ async def docs_system_info(
         embedding_model=info["embedding_model"],
         llm_model=info["llm_model"],
         vectorstore_ready=info["vectorstore_ready"],
-        document_count=info.get("document_count"),
+        vector_document_count=info.get("vector_document_count"),
         collection_id=info.get("collection_id"),
     )
 

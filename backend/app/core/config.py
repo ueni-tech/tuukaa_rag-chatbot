@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     型チェックとバリデーションを行う
     """
 
-    app_name: str = "LPナレッジ検索API"
+    app_name: str = "tuukaa API"
     app_version: str = "0.1.0"
     debug: bool = False
 

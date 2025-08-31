@@ -100,7 +100,9 @@ class SystemInfoResponse(BaseModel):
     embedding_model: str = Field(..., description="埋め込みモデル")
     llm_model: str = Field(..., description="LLMモデル")
     vectorstore_ready: bool = Field(..., description="ベクトルストア準備状況")
-    document_count: int | None = Field(None, description="保存されている文書数")
+    vector_document_count: int | None = Field(
+        None, description="保存されているベクトル化ドキュメント数"
+    )
     collection_id: str | None = Field(None, description="コレクションID")
 
 
@@ -126,6 +128,8 @@ class GenericUploadResponse(BaseModel):
     status: Literal["success"] = Field(..., description="処理ステータス")
     chunks_count: int = Field(..., description="作成されたチャンク数")
     collection_id: str = Field(..., description="ChromaコレクションID")
-    document_count: int = Field(..., description="コレクション内ドキュメント数")
+    vector_document_count: int = Field(
+        ..., description="コレクション内ベクトル化ドキュメント数"
+    )
     filename: str = Field(..., description="元ファイル名")
     tenant: str | None = Field(None, description="テナント識別子")

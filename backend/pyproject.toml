@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "lpknowledge-api"
+name = "tuukaa-api"
 version = "0.1.0"
-description = "LPナレッジ検索API - RAGベースのQ&Aシステム（フェーズ1から継承）"
+description = "tuukaa API - RAGベースのQ&Aシステム"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
 
