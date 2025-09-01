@@ -65,7 +65,7 @@ def _strip_tags(html: str) -> str:
 
 # NOTE
 # 汎用アップロード
-# pdf/md/markdown/txt/docx/pptx
+# pdf/md/markdown/txt/docx/pptx/xlsx
 @router.post("/upload", response_model=GenericUploadResponse)
 async def ingest_any_file(
     file: UploadFile = File(...),
@@ -85,6 +85,7 @@ async def ingest_any_file(
         "pdf": 10 * 1024 * 1024,
         "docx": 10 * 1024 * 1024,
         "pptx": 10 * 1024 * 1024,
+        "xlsx": 10 * 1024 * 1024,
         "md": 2 * 1024 * 1024,
         "markdown": 2 * 1024 * 1024,
         "txt": 2 * 1024 * 1024,
@@ -111,11 +112,16 @@ async def ingest_any_file(
     elif ext == "pptx":
         text = _normalize(dp.extract_text_from_pptx_bytes(content))
         source_type = "pptx"
+    elif ext == "xlsx":
+        text = _normalize(dp.extract_text_from_xlsx_bytes(content))
+        source_type = "xlsx"
     elif ext == "pdf":
         text = _normalize(dp.extract_text_from_pdf(content))
         source_type = "pdf"
     else:
-        raise HTTPException(400, "未対応の拡張子です（pdf/md/markdown/txt/docx/pptx）")
+        raise HTTPException(
+            400, "未対応の拡張子です（pdf/md/markdown/txt/docx/pptx/xlsx）"
+        )
 
     chunks = dp.split_text(text, chunk_size=cs, chunk_overlap=co)
     res = await rag.create_vectorstore_from_chunks(
