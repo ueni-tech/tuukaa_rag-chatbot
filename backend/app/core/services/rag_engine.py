@@ -194,7 +194,6 @@ class RAGEngine:
                 "status": "success",
                 "chunks_count": len(chunks),
                 "collection_id": current_uuid,
-                "document_count": self.vectorstore._collection.count(),
                 "filename": filename,
             }
 
@@ -355,7 +354,6 @@ class RAGEngine:
         info: dict[str, Any] = {
             "status": "initialized" if self.vectorstore else "not_initialized",
             "embedding_model": settings.embedding_model,
-            "llm_model": settings.default_model,
             "persist_directory": str(settings.persist_path),
         }
 
@@ -365,7 +363,7 @@ class RAGEngine:
                 info.update(
                     {
                         "collection_id": str(collection.id),
-                        "document_count": collection.count(),
+                        "vector_document_count": collection.count(),
                         "vectorstore_ready": True,
                     }
                 )
