@@ -81,7 +81,7 @@ def create_app() -> FastAPI:
     # セキュリティ設定
     if not settings.debug:
         app.add_middleware(
-            TrustedHostMiddleware, allow_hosts=["yourdomain.com", "*.yourdomain.com"]
+            TrustedHostMiddleware, allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
         )
 
     app.include_router(api_router, prefix="/api/v1")
