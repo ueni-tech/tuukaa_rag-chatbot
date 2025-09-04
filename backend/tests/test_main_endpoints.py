@@ -9,7 +9,6 @@ def test_root_health(client: TestClient):
         data = r.json()
         assert data["status"] == "healthy"
         assert isinstance(data["version"], str)
-        # ISOフォーマットの時刻であること（厳密ではなく prefix チェック）
         assert isinstance(data["timestamp"], str)
         assert "T" in data["timestamp"]
 

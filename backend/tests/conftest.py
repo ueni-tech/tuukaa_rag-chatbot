@@ -35,7 +35,7 @@ class FakeRAGEngine:
         }
 
     async def search_documents(
-        self, query: str, top_k: int | None = None, tenant: str | None = None
+        self, query: str, top_k: int | None, tenant: str | None = None
     ) -> list[FakeDocument]:
         # クエリ文字列を元に簡単なドキュメントを返す
         return [
@@ -84,7 +84,9 @@ class FakeRAGEngine:
         }
 
     async def delete_document_by_file_id(
-        self, file_id: str, tenant: str | None = None
+        self,
+        file_id: str | None = None,
+        tenant: str | None = None,
     ) -> dict[str, Any]:
         return {
             "status": "success",
@@ -107,7 +109,7 @@ async def dummy_lifespan(app):
 
 @pytest.fixture()
 def app(monkeypatch):
-    # ドキュメント用キーを設定（テスト時は1つのキーで十分）
+    # ドキュメント用キーを設定
     settings.embed_api_keys = "acme:demo123"
     # TrustedHostMiddleware を避けるため debug を有効化
     settings.debug = True
@@ -116,7 +118,6 @@ def app(monkeypatch):
     import app.main as main_mod
 
     monkeypatch.setattr(main_mod, "lifespan", dummy_lifespan)
-
     application = create_app()
 
     # 依存関係をスタブに差し替え
