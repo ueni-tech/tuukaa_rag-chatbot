@@ -25,9 +25,16 @@ def test_upload_rejects_large_files(client: TestClient):
     assert r.status_code == 413
 
 
-def test_url_ingest(client: TestClient):
+def test_url_ingest_success(client: TestClient):
+    r = client.post(
+        f"{BASE}/url", headers=_headers(), json={"url": "https://www.google.com/"}
+    )
+    assert r.status_code == 200
+
+
+def test_url_ingest_failed(client: TestClient):
     r = client.post(f"{BASE}/url", headers=_headers(), json={"url": "http://invalid"})
-    assert r.status_code in {200, 400}
+    assert r.status_code == 400
 
 
 def test_search(client: TestClient):
@@ -37,6 +44,12 @@ def test_search(client: TestClient):
     data = r.json()
     assert data["query"] == body["question"]
     assert data["total_found"] >= 0
+
+
+def test_search_requires_top_k(client: TestClient):
+    body = {"question": "会社のルールは?", "top_k": 0}
+    r = client.post(f"{BASE}/search", json=body)
+    assert r.status_code == 422
 
 
 def test_search_requires_embed_key(client: TestClient):
