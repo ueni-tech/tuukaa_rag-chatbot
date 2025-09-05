@@ -5,7 +5,17 @@ import urllib.request
 import codecs
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+    Request,
+)
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..core.config import settings
@@ -61,6 +71,28 @@ def _strip_tags(html: str) -> str:
         flags=re.I,
     )
     return _normalize(re.sub(r"<[^>]+>", " ", html))
+
+
+# --- /ask の制限・課金用の簡易状態（メモリ内） ---
+import asyncio
+import datetime as dt
+import hashlib
+import json
+import time
+
+_rpm: dict[tuple[str, str, str], tuple[int, float]] = {}
+_cost: dict[str, float] = {}
+_DEF_PRICE = 0.002  # 仮のJPY/token 単価
+_RESP_MAX_TOKENS = 1024
+
+
+def _origin_allowed(origin: str | None) -> bool:
+    allowed = settings.embed_allowed_origins_list
+    if not origin:
+        return True
+    if "*" in allowed:
+        return True
+    return origin in allowed
 
 
 # NOTE
@@ -205,29 +237,152 @@ async def docs_search(
 
 @router.post("/ask", response_model=AnswerResponse)
 async def docs_ask(
-    req: QuestionRequest,
+    question_req: QuestionRequest,
+    request: Request,
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=False),
-) -> AnswerResponse:
+) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
+
+    # Allowlist (Origin)
+    origin = request.headers.get("origin") if request else None
+    if not _origin_allowed(origin):
+        raise HTTPException(403, "origin not allowed")
+
+    # RPM 制限
+    ip = request.client.host if request and request.client else "0.0.0.0"
+    key = (ip, x_embed_key or "", "/embed/docs/ask")
+    now = time.time()
+    cnt, first = _rpm.get(key, (0, now))
+    if now - first >= 60:
+        cnt, first = 0, now
+    cnt += 1
+    _rpm[key] = (cnt, first)
+    if cnt > max(1, settings.rate_limit_rpm):
+        raise HTTPException(429, "rate limit exceeded")
+
+    # 日次ブレーカ（事前見積り）
+    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+    day = jst.strftime("%Y-%m-%d")
+    used = _cost.get(day, 0.0)
+    pre_tokens = max(1, len((question_req.question or "")) // 4) + _RESP_MAX_TOKENS
+    pre_est_cost = pre_tokens * _DEF_PRICE
+    if (
+        settings.daily_budget_jpy > 0
+        and used + pre_est_cost > settings.daily_budget_jpy
+    ):
+        raise HTTPException(402, "daily budget exceeded")
+
+    # 回答生成（テナント分離）
     result = await rag.generate_answer(
-        question=req.question,
-        top_k=req.top_k,
-        model=req.model,
-        temperature=req.temperature,
+        question=question_req.question,
+        top_k=question_req.top_k,
+        model=question_req.model,
+        temperature=question_req.temperature,
         tenant=tenant,
     )
+
+    # 引用情報の縮約・重複排除
+    # documents は全文、citations は参照情報のみ（title/source/page など）
+    documents_items = [
+        DocumentInfo(content=d["content"], metadata=d["metadata"])
+        for d in result["documents"]
+    ]
+
+    seen: set[tuple[str | None, int | None, str | None]] = set()
+    citations: list[DocumentInfo] = []
+    for d in result["documents"]:
+        m = d.get("metadata") or {}
+        source = m.get("source") or m.get("filename") or m.get("url") or "unknown"
+        page = m.get("page") or m.get("page_number")
+        try:
+            page_num = int(page) if page is not None else None
+        except Exception:
+            page_num = None
+        key = (str(source) if source is not None else None, page_num, m.get("file_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+
+        title = m.get("title")
+        label_parts = [
+            p
+            for p in [
+                title,
+                source,
+                (f"p.{page_num}" if page_num is not None else None),
+            ]
+            if p
+        ]
+        label = " - ".join(label_parts) if label_parts else str(source)
+
+        citations.append(
+            DocumentInfo(
+                content=label,
+                metadata={
+                    "source": source,
+                    "page": page_num,
+                    "file_id": m.get("file_id"),
+                },
+            )
+        )
+
+    # コスト（日次ブレーカ）
+    answer_text = result.get("answer", "")
+    tokens = max(1, len((question_req.question + "\n" + answer_text)) // 4)
+    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+    day = jst.strftime("%Y-%m-%d")
+    used = _cost.get(day, 0.0)
+    est_cost = tokens * _DEF_PRICE
+    if settings.daily_budget_jpy > 0 and used + est_cost > settings.daily_budget_jpy:
+        raise HTTPException(402, "daily budget exceeded")
+    _cost[day] = used + est_cost
+
+    # JSON ログ
+    def _hash(v: str) -> str:
+        return hashlib.sha256(v.encode("utf-8")).hexdigest()[:16]
+
+    log = {
+        "ip": ip,
+        "key_hash": _hash(x_embed_key or ""),
+        "tenant": tenant,
+        "question_hash": _hash(question_req.question),
+        "tokens": tokens,
+        "cost_jpy": round(est_cost, 4),
+        "status": "ok",
+    }
+    print(json.dump(log, ensure_ascii=False))
+
+    # SSE or JSON
+    accept = request.headers.get("accept", "").lower() if request else ""
+    if "text/event-stream" in accept:
+
+        async def gen():
+            for line in (answer_text or "").splitlines():
+                yield f"data: {line}\n\n"
+                await asyncio.sleep(0.01)
+            payload = {
+                "citations": [c.model_dump() for c in (citations or [])]
+                or ["引用なし"],
+                "tokens": tokens,
+                "cost_jpy": round(est_cost, 4),
+            }
+            yield "event: citations\n"
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
     return AnswerResponse(
-        answer=result["answer"],
-        question=req.question,
-        documents=[
-            DocumentInfo(content=d["content"], metadata=d["metadata"])
-            for d in result["documents"]
-        ],
+        answer=answer_text,
+        question=question_req.question,
+        documents=documents_items,
         context_used=result["context_used"],
         llm_model=result["llm_model"],
+        citations=citations or [DocumentInfo(content="引用なし", metadata={})],
+        tokens=tokens,
+        cost_jpy=round(est_cost, 4),
     )
 
 

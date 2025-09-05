@@ -59,6 +59,11 @@ class AnswerResponse(BaseModel):
     documents: list[DocumentInfo] = Field(..., description="参照された文書")
     context_used: str = Field(..., description="使用されたコンテキスト")
     llm_model: str = Field(..., description="回答に用いたLLMモデル")
+    citations: list[DocumentInfo] | list[str] | None = Field(
+        None, description="引用。なければ ['引用なし']"
+    )
+    tokens: int | None = Field(None, description="見積もりトークン数")
+    cost_jpy: float | None = Field(None, description="見積もりコスト(円)")
 
 
 class UploadResponse(BaseModel):
