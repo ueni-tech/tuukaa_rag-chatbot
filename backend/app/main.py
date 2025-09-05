@@ -67,16 +67,25 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CROS設定
-    app.add_middleware(
-        CORSMiddleware,
-        # TODO
-        # 本番用ドメインを設定する
-        allow_origins=["*"] if settings.debug else ["https://yourdomain.com"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS設定
+    if settings.debug:
+        # デバッグ時は全オリジンを許可
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=".*",
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        # 本番は許可リストのみ
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.embed_allowed_origins_list,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # セキュリティ設定
     if not settings.debug:
