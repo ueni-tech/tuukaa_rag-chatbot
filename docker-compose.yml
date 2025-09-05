@@ -13,15 +13,11 @@ services:
       - ./backend:/app:cached
       - ./backend/vectorstore:/app/vectorstore # バインドマウントに変更
       - ./backend/uploads:/app/uploads # バインドマウントに変更
+    env_file:
+      - ./.env
     environment:
       - PYTHONPATH=/app
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ALLOW_RESET=true
-      - DEBUG=true
-      - APP_NAME=LPナレッジ検索API
-      - APP_VERSION=0.1.0
-      - PERSIST_DIRECTORY=/app/vectorstore
-      - UPLOAD_DIRECTORY=/app/uploads
+      # 必要ならここにだけ上書き用を残す（なければ空でOK）
     stdin_open: true
     tty: true
     # healthcheck:

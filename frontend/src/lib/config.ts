@@ -6,7 +6,7 @@ export const config = {
     process.env.NEXT_PUBLIC_API_URL ||
     'http://localhost:8000',
   apiBasePath: process.env.NEXT_PUBLIC_API_BASE_PATH || '/api/v1',
-  appName: process.env.NEXT_PUBLIC_APP_NAME || 'LPナレッジ検索',
+  appName: process.env.NEXT_PUBLIC_APP_NAME || 'tuukaa',
   isDebug: process.env.NEXT_PUBLIC_DEBUG === 'true',
 }
 

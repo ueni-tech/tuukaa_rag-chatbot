@@ -28,7 +28,7 @@ class RAGEngine:
     """
 
     # RAG用プロンプトテンプレート
-    RAG_PROMPT_TEMPLATE = """\
+    RAG_PROMPT_TEMPLATE = """\\
 あなたは優秀な社内ルールのアシスタントです。
 提供されたコンテキスト情報を基に、ユーザーの質問に正確で実用的な回答を提供してください。
 
@@ -65,9 +65,10 @@ class RAGEngine:
     ) -> tuple[ChatOpenAI, str]:
         """(model, temperature)ごとにLLMをキャッシュして取得"""
         used_model = model or settings.default_model
-        used_temp = temperature or settings.default_temperature
+        used_temp = (
+            temperature if temperature is not None else settings.default_temperature
+        )
         key = (used_model, used_temp)
-
         if key not in self._llm_cache:
             api_key = (
                 SecretStr(settings.openai_api_key)
@@ -75,7 +76,7 @@ class RAGEngine:
                 else None
             )
             self._llm_cache[key] = ChatOpenAI(
-                model=used_model, temperature=used_temp, api_key=api_key
+                model=used_model, temperature=used_temp, api_key=api_key, timeout=60
             )
         return self._llm_cache[key], used_model
 
@@ -129,12 +130,20 @@ class RAGEngine:
         return False
 
     async def create_vectorstore_from_chunks(
-        self, chunks: list[str], filename: str
+        self,
+        chunks: list[str],
+        filename: str,
+        tenant: str | None = None,
+        source_type: str | None = None,
+        source: str | None = None,
     ) -> dict[str, Any]:
         """チャンクからベクトルストア作成
         Args:
             chunks: テキストチャンクのリスト
             filename: アップロードされたファイル名
+            tenant: クライアントの識別子
+            source_type: ファイルの種類
+            source: ファイルへのパス
         Returns:
             作成結果の情報
         Raises:
@@ -149,15 +158,21 @@ class RAGEngine:
 
             file_id = str(uuid.uuid4())
             upload_time = datetime.now().isoformat()
-            metadatas = [
-                {
+            metadatas = []
+            for i in range(len(chunks)):
+                md = {
                     "filename": filename,
                     "file_id": file_id,
                     "upload_time": upload_time,
                     "chunk_index": i,
                 }
-                for i in range(len(chunks))
-            ]
+                if tenant is not None:
+                    md["tenant"] = tenant
+                if source_type is not None:
+                    md["source_type"] = source_type
+                if source is not None:
+                    md["source"] = source
+                metadatas.append(md)
 
             if not self.vectorstore:
                 # 新規作成
@@ -179,7 +194,6 @@ class RAGEngine:
                 "status": "success",
                 "chunks_count": len(chunks),
                 "collection_id": current_uuid,
-                "document_count": self.vectorstore._collection.count(),
                 "filename": filename,
             }
 
@@ -223,7 +237,7 @@ class RAGEngine:
             pass
 
     async def search_documents(
-        self, query: str, top_k: int | None = None
+        self, query: str, top_k: int | None = None, tenant: str | None = None
     ) -> list[Document]:
         """文書検索
         Args:
@@ -242,10 +256,13 @@ class RAGEngine:
         k = top_k or settings.default_top_k
 
         try:
+            kwargs: dict[str, Any] = {"k": k}
+            if tenant is not None:
+                kwargs["filter"] = {"tenant": tenant}
             retriever = self.vectorstore.as_retriever(
-                search_type="similarity", search_kwargs={"k": k}
+                search_type="similarity", search_kwargs=kwargs
             )
-            documents = retriever.invoke(query)
+            documents = await retriever.ainvoke(query)
             return documents
 
         except Exception as e:
@@ -257,6 +274,7 @@ class RAGEngine:
         top_k: int | None,
         model: str | None = None,
         temperature: float | None = None,
+        tenant: str | None = None,
     ) -> dict[str, Any]:
         """RAGによる回答生成
         Args:
@@ -273,7 +291,7 @@ class RAGEngine:
             raise RuntimeError("RAGエンジンが初期化されていません")
 
         try:
-            documents = await self.search_documents(question, top_k)
+            documents = await self.search_documents(question, top_k, tenant=tenant)
 
             if not documents:
                 return {
@@ -302,7 +320,7 @@ class RAGEngine:
                 | StrOutputParser()
             )
 
-            answer = rag_chain.invoke(question)
+            answer = await rag_chain.ainvoke(question)
 
             return {
                 "answer": answer,
@@ -336,7 +354,6 @@ class RAGEngine:
         info: dict[str, Any] = {
             "status": "initialized" if self.vectorstore else "not_initialized",
             "embedding_model": settings.embedding_model,
-            "llm_model": settings.default_model,
             "persist_directory": str(settings.persist_path),
         }
 
@@ -346,7 +363,7 @@ class RAGEngine:
                 info.update(
                     {
                         "collection_id": str(collection.id),
-                        "document_count": collection.count(),
+                        "vector_document_count": collection.count(),
                         "vectorstore_ready": True,
                     }
                 )
@@ -357,15 +374,17 @@ class RAGEngine:
 
         return info
 
-    async def get_document_list(self) -> dict[str, Any]:
+    async def get_document_list(self, tenant: str | None = None) -> dict[str, Any]:
         """アップロード済みドキュメント一覧を取得"""
         try:
             if not self.vectorstore:
                 return {"files": [], "total_files": 0, "total_chunks": 0}
 
             collection = self.vectorstore._collection
-            results = collection.get(include=["metadatas"])
+            where = {"tenant": {"$eq": tenant}} if tenant is not None else None
+            results = collection.get(include=["metadatas"], where=where)
             metadatas = results.get("metadatas") or []
+
             if not metadatas:
                 return {"files": [], "total_files": 0, "total_chunks": 0}
 
@@ -393,27 +412,43 @@ class RAGEngine:
         except Exception as e:
             raise RuntimeError(f"ドキュメント一覧の取得に失敗しました: {str(e)}")
 
-    async def delete_document_by_filename(self, filename: str) -> dict[str, Any]:
-        """ファイル名でドキュメントを削除"""
+    async def delete_document_by_file_id(
+        self, file_id: str, tenant: str | None = None
+    ) -> dict[str, Any]:
+        """file_idでドキュメントを削除（推奨）"""
         try:
             if not self.vectorstore:
                 raise RuntimeError("ベクトルストアが初期化されていません")
 
             collection = self.vectorstore._collection
-            before_count = collection.count()
+            conditions = [{"file_id": {"$eq": file_id}}]
+            if tenant is not None:
+                conditions.append({"tenant": {"$eq": tenant}})
+            where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
 
-            results = collection.get(
-                where={"filename": filename}, include=["metadatas"]
-            )
+            results = collection.get(where=where, include=["metadatas"])
             ids = results.get("ids") or []
             if not ids:
-                raise ValueError(f"ファイル '{filename}'は見つかりませんでした")
+                raise ValueError(f"file_id '{file_id}' は見つかりませんでした")
+
+            # 表示用に代表となるファイル名を抽出
+            metadatas = results.get("metadatas") or []
+            detected_filename = "unknown"
+            for md in metadatas:
+                if md and md.get("filename"):
+                    detected_filename = md.get("filename")
+                    break
 
             deleted_count = len(ids)
-            collection.delete(where={"filename": filename})
+            collection.delete(where=where)
             after_count = collection.count()
 
-            remaining_results = collection.get(include=["metadatas"])
+            remaining_where = (
+                {"tenant": {"$eq": tenant}} if tenant is not None else None
+            )
+            remaining_results = collection.get(
+                include=["metadatas"], where=remaining_where
+            )
             metadatas = remaining_results.get("metadatas") or []
             remaining_files = (
                 len({md.get("filename", "unknown") for md in metadatas if md})
@@ -423,14 +458,14 @@ class RAGEngine:
 
             return {
                 "status": "success",
-                "message": f"ファイル '{filename}'を削除しました",
-                "deleted_filename": filename,
+                "message": f"{detected_filename}({file_id})を削除しました",
+                "deleted_file_id": file_id,
                 "deleted_chunks": deleted_count,
                 "remaining_files": remaining_files,
                 "remaining_chunks": after_count,
             }
         except Exception as e:
-            raise RuntimeError(f"ドキュメントの削除に失敗しました: {str(e)}")
+            raise RuntimeError(f"file_id削除に失敗しました: {str(e)}")
 
     async def reset_vectorstore(self) -> dict[str, str]:
         """ベクトルストアをリセット

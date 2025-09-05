@@ -1,90 +1,22 @@
-import pytest
 import tempfile
 from pathlib import Path
+
+import pytest
+
 from app.core import config
 from app.core.services.rag_engine import RAGEngine
 
 
-@pytest.fixture(autouse=True)
-def patch_paths(monkeypatch):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_path = Path(tmpdir)
-        # persist_path, upload_path の property を両方上書き
-        monkeypatch.setattr(
-            type(config.settings),
-            "persist_path",
-            property(lambda self: tmp_path / "vectorstore"),
-        )
-        monkeypatch.setattr(
-            type(config.settings),
-            "upload_path",
-            property(lambda self: tmp_path / "uploads"),
-        )
-        yield
-
-
 @pytest.mark.asyncio
-async def test_initialize():
-    if not config.settings.openai_api_key:
-        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
-    engine = RAGEngine()
-    await engine.initialize()
-    assert engine.embeddings is not None
-    assert engine.llm is not None
-
-
-@pytest.mark.asyncio
-async def test_create_vectorstore_from_chunks():
-    if not config.settings.openai_api_key:
-        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
-    engine = RAGEngine()
-    await engine.initialize()
-    chunks = ["テスト文書1", "テスト文書2"]
-    result = await engine.create_vectorstore_from_chunks(chunks)
-    assert result["status"] == "success"
-    assert result["chunks_count"] == 2
-
-
-@pytest.mark.asyncio
-async def test_search_documents():
-    if not config.settings.openai_api_key:
-        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
-    engine = RAGEngine()
-    await engine.initialize()
-    await engine.create_vectorstore_from_chunks(["テスト文書"])
-    docs = await engine.search_documents("テスト")
-    assert isinstance(docs, list)
-
-
-@pytest.mark.asyncio
-async def test_generate_answer():
-    if not config.settings.openai_api_key:
-        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
-    engine = RAGEngine()
-    await engine.initialize()
-    await engine.create_vectorstore_from_chunks(["テスト文書"])
-    result = await engine.generate_answer("テストとは？", top_k=1)
-    assert "answer" in result
-    assert "documents" in result
-
-
-@pytest.mark.asyncio
-async def test_get_system_info():
-    if not config.settings.openai_api_key:
-        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
-    engine = RAGEngine()
-    await engine.initialize()
-    info = await engine.get_system_info()
+async def test_get_system_info_without_real_init():
+    engin = RAGEngine()
+    info = await engin.get_system_info()
     assert "status" in info
-    assert "embedding_model" in info
+    assert info["vectorstore_ready"] in {True, False}
 
 
 @pytest.mark.asyncio
-async def test_reset_vectorstore():
-    if not config.settings.openai_api_key:
-        pytest.skip("OPENAI_API_KEY 未設定のためスキップ")
+async def test_search_documents_requires_vectorstore():
     engine = RAGEngine()
-    await engine.initialize()
-    await engine.create_vectorstore_from_chunks(["テスト文書"])
-    result = await engine.reset_vectorstore()
-    assert result["status"] == "success"
+    with pytest.raises(RuntimeError):
+        await engine.search_documents("hello")

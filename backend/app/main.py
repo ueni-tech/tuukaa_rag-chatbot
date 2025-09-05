@@ -61,27 +61,36 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="LangChainとRAGを活用したコーディング規約Q&Aシステム",
+        description="LangChainとRAGベースのQ&Aシステム",
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
         lifespan=lifespan,
     )
 
-    # CROS設定
-    app.add_middleware(
-        CORSMiddleware,
-        # TODO
-        # 本番用ドメインを設定する
-        allow_origins=["*"] if settings.debug else ["https://yourdomain.com"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS設定
+    if settings.debug:
+        # デバッグ時は全オリジンを許可
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=".*",
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        # 本番は許可リストのみ
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.embed_allowed_origins_list,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # セキュリティ設定
     if not settings.debug:
         app.add_middleware(
-            TrustedHostMiddleware, allow_hosts=["yourdomain.com", "*.yourdomain.com"]
+            TrustedHostMiddleware, allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
         )
 
     app.include_router(api_router, prefix="/api/v1")

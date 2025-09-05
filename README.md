@@ -11,7 +11,7 @@ cd tuukaa
 cat > .env << EOF
 OPENAI_API_KEY=your_actual_api_key_here
 NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_APP_NAME=LPナレッジ検索
+NEXT_PUBLIC_APP_NAME=tuukaa
 EOF
 ```
 
@@ -259,7 +259,7 @@ tuukaa/
 # ===== Backend =====
 OPENAI_API_KEY=
 DEBUG=true
-APP_NAME=LPナレッジ検索API
+APP_NAME=tuukaa API
 APP_VERSION=0.1.0
 
 # 永続化ディレクトリ（docker-compose と整合）

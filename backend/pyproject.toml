@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "lpknowledge-api"
+name = "tuukaa-api"
 version = "0.1.0"
-description = "LPナレッジ検索API - RAGベースのQ&Aシステム（フェーズ1から継承）"
+description = "tuukaa API - RAGベースのQ&Aシステム"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
 
@@ -23,9 +23,13 @@ tiktoken = "^0.9.0"
 chromadb = "^1.0.12"
 # フェーズ1から継承（Streamlit - 将来の比較用に残しておく）
 streamlit = "^1.32.0"
+ # ファイル抽出系（本番依存）
+ pypdf = "^4.0.0"
+ python-docx = "^1.1.0"
+ python-pptx = "^0.6.23"
+openpyxl = "^3.1.5"
 
 [tool.poetry.group.dev.dependencies]
-pypdf = "^4.0.0"
 pytest-asyncio = "^0.23.0"
 black = "^24.0.0"
 flake8 = "^7.0.0"
