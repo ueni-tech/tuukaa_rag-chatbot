@@ -16,7 +16,9 @@ from fastapi import (
     Request,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, NonNegativeInt
+from redis import Redis
+import os
 
 from ..core.config import settings
 from ..core.web.dependencies import get_rag_engine
@@ -82,7 +84,15 @@ import time
 
 _rpm: dict[tuple[str, str, str], tuple[int, float]] = {}
 _cost: dict[tuple(str, str), float] = {}
-_DEF_PRICE = 0.002  # 仮のJPY/token 単価
+try:
+    _G5_USD = settings.model_pricing_map.get("gpt-5")
+    if _G5_USD is not None:
+        _DEF_PRICE = float(_G5_USD) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    else:
+        _DEF_PRICE = 0.002
+except Exception:
+    _DEF_PRICE = 0.002
+# 既定のJPY/token 単価。未登録モデルのフォールバックとして使用（gpt-5ベース／なければ0.002）
 _RESP_MAX_TOKENS = 1024
 
 
@@ -93,6 +103,27 @@ def _origin_allowed(origin: str | None) -> bool:
     if "*" in allowed:
         return True
     return origin in allowed
+
+
+# JSTの翌日0時までの残秒数を返す
+def _second_until_next_jst_midnight(now: dt.datetime | None = None) -> int:
+    jst = dt.timezone(dt.timedelta(hours=9))
+    now = now or dt.datetime.now(jst)
+    next_day = (now + dt.timedelta(days=1)).date()
+    next_midnight = dt.datetime.combine(next_day, dt.time(0, 0, 0), tzinfo=jst)
+    return max(1, int((next_midnight - now).total_seconds()))
+
+
+def _get_redis() -> Redis | None:
+    url = getattr(settings, "redis_url", None) or os.getenv("REDIS_URL")
+    if not url:
+        return None
+    try:
+        client = Redis.from_url(url, decode_responses=True)
+        client.ping()
+        return client
+    except Exception:
+        return None
 
 
 # NOTE
@@ -266,9 +297,25 @@ async def docs_ask(
     # 日次ブレーカ（事前見積り）
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
-    used = _cost.get((day, tenant), 0.0)
+    # MODEL_PRICING は USD/token（出力単価）想定。JPY換算して見積り
+    selected_model = (question_req.model or settings.default_model or "").strip()
+    usd_price_per_token = settings.model_pricing_map.get(selected_model)
+    if usd_price_per_token is None:
+        # 未設定時は JPY/token 既定値を利用
+        jpy_price_per_token = _DEF_PRICE
+    else:
+        jpy_price_per_token = float(usd_price_per_token) * float(
+            getattr(settings, "usd_jpy_rate", 150.0)
+        )
     pre_tokens = max(1, len((question_req.question or "")) // 4) + _RESP_MAX_TOKENS
-    pre_est_cost = pre_tokens * _DEF_PRICE
+    pre_est_cost = pre_tokens * jpy_price_per_token
+    rc = _get_redis()
+    if rc:
+        key = f"cost:{day}:{tenant}"
+        used = float(rc.get(key) or 0.0)
+    else:
+        used = _cost.get((day, tenant), 0.0)
+
     if (
         settings.daily_budget_jpy > 0
         and used + pre_est_cost > settings.daily_budget_jpy
@@ -334,11 +381,39 @@ async def docs_ask(
     tokens = max(1, len((question_req.question + "\n" + answer_text)) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
-    used = _cost.get((day, tenant), 0.0)
-    est_cost = tokens * _DEF_PRICE
-    if settings.daily_budget_jpy > 0 and used + est_cost > settings.daily_budget_jpy:
-        raise HTTPException(402, "本日の使用上限に達しました")
-    _cost[(day, tenant)] = used + est_cost
+    # 事後計上も同じレートでJPY換算
+    selected_model = (question_req.model or settings.default_model or "").strip()
+    usd_price_per_token = settings.model_pricing_map.get(selected_model)
+    if usd_price_per_token is None:
+        jpy_price_per_token = _DEF_PRICE
+    else:
+        jpy_price_per_token = float(usd_price_per_token) * float(
+            getattr(settings, "usd_jpy_rate", 150.0)
+        )
+    est_cost = tokens * jpy_price_per_token
+    rc = _get_redis()
+    if rc:
+        key = f"cost:{day}:{tenant}"
+        used = float(rc.get(key) or 0.0)
+        if (
+            settings.daily_budget_jpy > 0
+            and used + est_cost > settings.daily_budget_jpy
+        ):
+            raise HTTPException(402, "本日の使用上限に達しました")
+        pipe = rc.pipeline()
+        pipe.incrbyfloat(key, est_cost)
+        pipe.ttl(key)
+        _, ttl = pipe.execute()
+        if ttl == -1:
+            rc.expire(key, _second_until_next_jst_midnight(jst))
+    else:
+        used = _cost.get((day, tenant), 0, 0)
+        if (
+            settings.daily_budget_jpy > 0
+            and used + est_cost > settings.daily_budget_jpy
+        ):
+            raise HTTPException(402, "本日の予算を超過しました")
+        _cost[(day, tenant)] = used + est_cost
 
     # JSON ログ
     def _hash(v: str) -> str:

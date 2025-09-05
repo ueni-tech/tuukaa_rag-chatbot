@@ -17,7 +17,9 @@ services:
       - ./.env
     environment:
       - PYTHONPATH=/app
-      # 必要ならここにだけ上書き用を残す（なければ空でOK）
+    depends_on:
+      redis:
+        condition: service_healthy
     stdin_open: true
     tty: true
     # healthcheck:
@@ -27,6 +29,30 @@ services:
     #   retries: 3
     #   start_period: 40s
 
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   vectorstore:
   uploads:
+  redis-data:

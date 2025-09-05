@@ -42,17 +42,26 @@ class Settings(BaseSettings):
     allowed_extensions: list[str] = ["pdf"]
     upload_directory: str = "./uploads"
 
-    # ===== LP Domain (placeholders) =====
+    # ===== LP Domain =====
     lp_model: str | None = None
     lp_tone: str | None = None
     lp_max_tokens: Optional[int] = None
 
-    # ===== Embed Domain (placeholders) =====
+    # ===== Embed Domain =====
     embed_collection_prefix: str | None = None
     embed_allowed_origins: str | None = "*"
     embed_api_keys: str | None = None
     rate_limit_rpm: int = 60
-    daily_budget_jpy: float = 0.0
+    daily_budget_jpy: float = 50.0
+
+    # ==== Redis設定 ====
+    redis_url: str | None = "redis://localhost:6379/0"
+
+    # === 料金・トークン上限 ===
+    model_pricing: str | None = None  # 例: "gpt-4o-mini:0.002,gpt-4o:0.006"
+    default_max_output_tokens: int = 1024
+    # USD→JPY 為替レート（MODEL_PRICING を USD/token として受け取る想定）
+    usd_jpy_rate: float = 148.117
 
     class ConfigDict:
         env_file = ".env"
@@ -94,6 +103,27 @@ class Settings(BaseSettings):
         raw = os.getenv("ALLOWED_ORIGINS") or (self.embed_allowed_origins or "*")
         items = [o.strip() for o in raw.split(",") if o.strip()]
         return items or ["*"]
+
+    @property
+    def model_pricing_map(self) -> dict[str, float]:
+        mapping: dict[str, float] = {}
+        raw = (self.model_pricing or "").strip()
+        if not raw:
+            return mapping
+        for pair in raw.split(","):
+            if ":" not in pair:
+                continue
+            name, price = pair.split(":", 1)
+            name, price = name.strip(), price.strip()
+            # 価格が "=0.00001" や "in=0.00001" のような表記でも最後の '=' 以降を採用
+            if "=" in price:
+                price = price.split("=")[-1].strip()
+            try:
+                if name:
+                    mapping[name] = float(price)
+            except Exception:
+                continue
+        return mapping
 
 
 settings = Settings()

@@ -70,14 +70,9 @@ export default function ChatPage() {
   const [isBot, setIsBot] = useState(true)
   const topK = useSettingsStore(s => s.topK)
 
-  const MODELS = [
-    'gpt-4o-mini',
-    'gpt-4.1-nano',
-    'gpt-4.1-mini',
-    'gpt-4o',
-  ] as const
+  const MODELS = ['gpt-5', 'gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o'] as const
   type Model = (typeof MODELS)[number]
-  const DEFAULT_MODEL: Model = 'gpt-4o-mini'
+  const DEFAULT_MODEL: Model = 'gpt-5'
   const [model, setModel] = useState<Model>(DEFAULT_MODEL)
   const mounted = useRef(false)
   const isModel = (v: string): v is Model =>
