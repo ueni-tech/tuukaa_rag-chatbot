@@ -81,7 +81,7 @@ import json
 import time
 
 _rpm: dict[tuple[str, str, str], tuple[int, float]] = {}
-_cost: dict[str, float] = {}
+_cost: dict[tuple(str, str), float] = {}
 _DEF_PRICE = 0.002  # 仮のJPY/token 単価
 _RESP_MAX_TOKENS = 1024
 
@@ -266,14 +266,14 @@ async def docs_ask(
     # 日次ブレーカ（事前見積り）
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
-    used = _cost.get(day, 0.0)
+    used = _cost.get((day, tenant), 0.0)
     pre_tokens = max(1, len((question_req.question or "")) // 4) + _RESP_MAX_TOKENS
     pre_est_cost = pre_tokens * _DEF_PRICE
     if (
         settings.daily_budget_jpy > 0
         and used + pre_est_cost > settings.daily_budget_jpy
     ):
-        raise HTTPException(402, "daily budget exceeded")
+        raise HTTPException(402, "本日の使用上限に達しました")
 
     # 回答生成（テナント分離）
     result = await rag.generate_answer(
@@ -334,11 +334,11 @@ async def docs_ask(
     tokens = max(1, len((question_req.question + "\n" + answer_text)) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
-    used = _cost.get(day, 0.0)
+    used = _cost.get((day, tenant), 0.0)
     est_cost = tokens * _DEF_PRICE
     if settings.daily_budget_jpy > 0 and used + est_cost > settings.daily_budget_jpy:
-        raise HTTPException(402, "daily budget exceeded")
-    _cost[day] = used + est_cost
+        raise HTTPException(402, "本日の使用上限に達しました")
+    _cost[(day, tenant)] = used + est_cost
 
     # JSON ログ
     def _hash(v: str) -> str:
