@@ -317,10 +317,19 @@ class RAGEngine:
                 {"context": lambda x: context, "question": RunnablePassthrough()}
                 | prompt
                 | llm
-                | StrOutputParser()
             )
 
-            answer = await rag_chain.ainvoke(question)
+            msg = await rag_chain.ainvoke(question)
+            answer = getattr(msg, "content", str(msg))
+
+            # APIレスポンス由来のモデル名を優先（無ければused_model）
+            resp_meta = getattr(msg, "response_metadata", {}) or {}
+            resp_model = (
+                resp_meta.get("model_name")
+                or resp_meta.get("model")
+                or getattr(msg, "model", None)
+            )
+            actual_model = resp_model or used_model
 
             return {
                 "answer": answer,
@@ -329,7 +338,7 @@ class RAGEngine:
                     for doc in documents
                 ],
                 "context_used": context,
-                "llm_model": used_model,
+                "llm_model": actual_model,
             }
 
         except Exception as e:
