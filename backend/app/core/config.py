@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
 
     # LLM設定
-    default_model: str = "gpt-4o-mini"
+    default_model: str = "gpt-5-mini"
     default_temperature: float = 0.0
     default_top_k: int = 3
     max_chunk_size: int = 2000

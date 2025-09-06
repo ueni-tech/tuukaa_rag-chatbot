@@ -78,7 +78,7 @@ export default function ChatPage() {
     'gpt-4o-mini',
   ] as const
   type Model = (typeof MODELS)[number]
-  const DEFAULT_MODEL: Model = 'gpt-5'
+  const DEFAULT_MODEL: Model = 'gpt-5-mini'
   const [model, setModel] = useState<Model>(DEFAULT_MODEL)
   const mounted = useRef(false)
   const isModel = (v: string): v is Model =>
