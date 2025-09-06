@@ -90,7 +90,7 @@ class DocumentProcessor:
         """TXT(プレーンテキスト)からテキスト抽出"""
         try:
             if data.startswith(b"\xef\xbb\xbf"):
-                enc = "urf-8-sig"
+                enc = "utf-8-sig"
             else:
                 enc = "utf-8"
             return data.decode(enc, errors="replace")

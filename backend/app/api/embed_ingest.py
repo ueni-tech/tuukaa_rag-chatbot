@@ -83,26 +83,19 @@ import json
 import time
 
 _rpm: dict[tuple[str, str, str], tuple[int, float]] = {}
-_cost: dict[tuple(str, str), float] = {}
+_cost: dict[tuple[str, str], float] = {}
+
 try:
-    _G5_USD = settings.model_pricing_map.get("gpt-5")
-    if _G5_USD is not None:
-        _DEF_PRICE = float(_G5_USD) * float(getattr(settings, "usd_jpy_rate", 150.0))
-    else:
-        _DEF_PRICE = 0.002
+    # 既定: 1M tokens あたり 10 USD を為替換算 → JPY/token
+    default_usd_per_mtoken = 10.0
+    _DEF_PRICE = (float(default_usd_per_mtoken) / 1_000_000.0) * float(
+        getattr(settings, "usd_jpy_rate", 150.0)
+    )
 except Exception:
-    _DEF_PRICE = 0.002
-# 既定のJPY/token 単価。未登録モデルのフォールバックとして使用（gpt-5ベース／なければ0.002）
+    # 例外時も同一基準で換算（単位一貫性を維持）
+    _DEF_PRICE = (10.0 / 1_000_000.0) * float(getattr(settings, "usd_jpy_rate", 150.0))
+
 _RESP_MAX_TOKENS = 1024
-
-
-def _origin_allowed(origin: str | None) -> bool:
-    allowed = settings.embed_allowed_origins_list
-    if not origin:
-        return True
-    if "*" in allowed:
-        return True
-    return origin in allowed
 
 
 # JSTの翌日0時までの残秒数を返す
@@ -277,11 +270,6 @@ async def docs_ask(
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
 
-    # Allowlist (Origin)
-    origin = request.headers.get("origin") if request else None
-    if not _origin_allowed(origin):
-        raise HTTPException(403, "origin not allowed")
-
     # RPM 制限
     ip = request.client.host if request and request.client else "0.0.0.0"
     key = (ip, x_embed_key or "", "/embed/docs/ask")
@@ -297,18 +285,32 @@ async def docs_ask(
     # 日次ブレーカ（事前見積り）
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
-    # MODEL_PRICING は USD/token（出力単価）想定。JPY換算して見積り
+    # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
     selected_model = (question_req.model or settings.default_model or "").strip()
-    usd_price_per_token = settings.model_pricing_map.get(selected_model)
-    if usd_price_per_token is None:
-        # 未設定時は JPY/token 既定値を利用
-        jpy_price_per_token = _DEF_PRICE
+    inout = settings.model_pricing_inout_map.get(selected_model)
+    if inout is None:
+        usd_in = usd_out = None
     else:
-        jpy_price_per_token = float(usd_price_per_token) * float(
-            getattr(settings, "usd_jpy_rate", 150.0)
-        )
-    pre_tokens = max(1, len((question_req.question or "")) // 4) + _RESP_MAX_TOKENS
-    pre_est_cost = pre_tokens * jpy_price_per_token
+        usd_in, usd_out = inout
+    if usd_in is None:
+        jpy_in = _DEF_PRICE
+    else:
+        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    if usd_out is None:
+        jpy_out = _DEF_PRICE
+    else:
+        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+
+    max_out = question_req.max_output_tokens or getattr(
+        settings, "default_max_output_tokens", _RESP_MAX_TOKENS
+    )
+
+    # 入力見積: 質問 + 参照文書(後で実際に取得するため、ここでは概算: 質問長のk倍)
+    # 事前見積は保守的に質問長×2 をRAGコンテキスト概算とする
+    qlen = len((question_req.question or ""))
+    input_est_tokens = max(1, (qlen + 2 * qlen) // 4)  # question + approx(context)
+    output_est_tokens = max_out
+    pre_est_cost = input_est_tokens * jpy_in + output_est_tokens * jpy_out
     rc = _get_redis()
     if rc:
         key = f"cost:{day}:{tenant}"
@@ -376,21 +378,30 @@ async def docs_ask(
             )
         )
 
-    # コスト（日次ブレーカ）
+    # コスト（日次ブレーカ） 実績: 入力(質問+実際のcontext) と 出力(回答) を分離
     answer_text = result.get("answer", "")
-    tokens = max(1, len((question_req.question + "\n" + answer_text)) // 4)
+    context_used = result.get("context_used", "")
+    input_tokens = max(1, len((question_req.question + "\n" + context_used)) // 4)
+    output_tokens = max(1, len(answer_text) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
-    # 事後計上も同じレートでJPY換算
+    # 事後計上: in/out 単価で合計
     selected_model = (question_req.model or settings.default_model or "").strip()
-    usd_price_per_token = settings.model_pricing_map.get(selected_model)
-    if usd_price_per_token is None:
-        jpy_price_per_token = _DEF_PRICE
+    inout = settings.model_pricing_inout_map.get(selected_model)
+    if inout is None:
+        usd_in = usd_out = None
     else:
-        jpy_price_per_token = float(usd_price_per_token) * float(
-            getattr(settings, "usd_jpy_rate", 150.0)
-        )
-    est_cost = tokens * jpy_price_per_token
+        usd_in, usd_out = inout
+    if usd_in is None:
+        jpy_in = _DEF_PRICE
+    else:
+        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    if usd_out is None:
+        jpy_out = _DEF_PRICE
+    else:
+        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+
+    est_cost = input_tokens * jpy_in + output_tokens * jpy_out
     rc = _get_redis()
     if rc:
         key = f"cost:{day}:{tenant}"
@@ -407,7 +418,7 @@ async def docs_ask(
         if ttl == -1:
             rc.expire(key, _second_until_next_jst_midnight(jst))
     else:
-        used = _cost.get((day, tenant), 0, 0)
+        used = _cost.get((day, tenant), 0.0)
         if (
             settings.daily_budget_jpy > 0
             and used + est_cost > settings.daily_budget_jpy
@@ -424,11 +435,11 @@ async def docs_ask(
         "key_hash": _hash(x_embed_key or ""),
         "tenant": tenant,
         "question_hash": _hash(question_req.question),
-        "tokens": tokens,
+        "tokens": input_tokens + output_tokens,
         "cost_jpy": round(est_cost, 4),
         "status": "ok",
     }
-    print(json.dump(log, ensure_ascii=False))
+    print(json.dumps(log, ensure_ascii=False))
 
     # SSE or JSON
     accept = request.headers.get("accept", "").lower() if request else ""
@@ -441,7 +452,7 @@ async def docs_ask(
             payload = {
                 "citations": [c.model_dump() for c in (citations or [])]
                 or ["引用なし"],
-                "tokens": tokens,
+                "tokens": input_tokens + output_tokens,
                 "cost_jpy": round(est_cost, 4),
             }
             yield "event: citations\n"
@@ -456,7 +467,7 @@ async def docs_ask(
         context_used=result["context_used"],
         llm_model=result["llm_model"],
         citations=citations or [DocumentInfo(content="引用なし", metadata={})],
-        tokens=tokens,
+        tokens=input_tokens + output_tokens,
         cost_jpy=round(est_cost, 4),
     )
 

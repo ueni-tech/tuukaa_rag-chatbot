@@ -33,6 +33,9 @@ class QuestionRequest(BaseModel):
     temperature: float | None = Field(
         None, ge=0.0, le=0.5, description="生成温度(0.0～0.5)"
     )
+    max_output_tokens: int | None = Field(
+        None, ge=1, le=4096, description="出力トークンの上限(見積もり用の上限)"
+    )
 
     @field_validator("question")
     @staticmethod
