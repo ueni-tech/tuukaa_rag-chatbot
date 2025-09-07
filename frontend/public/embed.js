@@ -175,7 +175,7 @@
 }
 
 .msg.ai .bubble {
-  background: white;
+  background: rgba(74, 85, 104, 0.05);
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-bottom-left-radius: 6px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -502,18 +502,17 @@
     box.className = "box";
     box.innerHTML = `
       <div class="head">
-        <div class="head-title">AI Assistant</div>
-        <div class="head-subtitle">お手伝いいたします</div>
+        <div class="head-title">AI サポートデスク</div>
+        <div class="head-subtitle">24時間いつでも対応可能！</div>
         <button class="head-close" aria-label="閉じる">✕</button>
       </div>
       <div class="messages">
         <div class="welcome-message">
-          <strong>こんにちは！</strong><br>
-          何かご質問がございましたら、お気軽にお聞かせください。
+          <strong>こんにちは！</strong><br>ご質問やお困りごとがございましたら、お気軽にお声がけください。
         </div>
       </div>
       <div class="foot">
-        <textarea placeholder="メッセージを入力してください...&#10;Shift+Enterで改行"></textarea>
+        <textarea placeholder="ご質問をお聞かせください...&#10;Shift+Enterで改行"></textarea>
         <button>送信</button>
       </div>
     `;
