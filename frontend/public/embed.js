@@ -495,6 +495,95 @@
   color: #2d3748;
   font-weight: 600;
 }
+
+/* Error message styles */
+.error-message {
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #dc2626;
+  line-height: 1.5;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.error-message strong {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.error-message .error-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-message .error-title::before {
+  content: '⚠️';
+  font-size: 16px;
+}
+
+.error-message .error-details {
+  font-size: 13px;
+  opacity: 0.9;
+  margin-top: 6px;
+}
+
+.error-message .error-retry {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.error-message .retry-btn {
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.error-message .retry-btn:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.warning-message {
+  background: rgba(245, 158, 11, 0.05);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #d97706;
+  line-height: 1.5;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.warning-message strong {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.warning-message .warning-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.warning-message .warning-title::before {
+  content: '⏰';
+  font-size: 16px;
+}
 `;
     const container = document.createElement("div");
 
@@ -639,9 +728,90 @@
       return b;
     }
 
+    function appendErrorMessage(errorType, title, details, showRetry = false) {
+      const errorDiv = document.createElement('div');
+      errorDiv.className = errorType === 'warning' ? 'warning-message' : 'error-message';
+      
+      let retryButton = '';
+      if (showRetry) {
+        retryButton = '<div class="error-retry"><button class="retry-btn" onclick="location.reload()">再読み込み</button></div>';
+      }
+      
+      errorDiv.innerHTML = `
+        <div class="${errorType === 'warning' ? 'warning-title' : 'error-title'}">${escapeHtml(title)}</div>
+        <div class="${errorType === 'warning' ? 'warning-details' : 'error-details'}">${escapeHtml(details)}</div>
+        ${retryButton}
+      `;
+      
+      messages.appendChild(errorDiv);
+      messages.scrollTop = messages.scrollHeight;
+      return errorDiv;
+    }
+
     function showTyping(){
       const el = appendMessage('ai', '<span class="typing">回答を生成しています</span>');
       return { remove(){ el.parentElement && el.parentElement.remove(); } };
+    }
+
+    function getErrorMessage(status, responseText) {
+      switch (status) {
+        case 401:
+          return {
+            type: 'error',
+            title: '認証エラー',
+            details: '埋め込みキーが無効です。サイト管理者にお問い合わせください。',
+            showRetry: false
+          };
+        case 429:
+          return {
+            type: 'warning',
+            title: 'アクセス制限',
+            details: 'リクエストが集中しています。しばらく時間をおいてから再度お試しください。',
+            showRetry: true
+          };
+        case 402:
+          return {
+            type: 'warning',
+            title: '利用上限到達',
+            details: '本日の利用上限に達しました。明日再度ご利用ください。',
+            showRetry: false
+          };
+        case 403:
+          return {
+            type: 'error',
+            title: 'アクセス拒否',
+            details: 'このサイトからのアクセスは許可されていません。',
+            showRetry: false
+          };
+        case 500:
+        case 502:
+        case 503:
+        case 504:
+          return {
+            type: 'error',
+            title: 'サーバーエラー',
+            details: 'サーバーで問題が発生しています。しばらく時間をおいてから再度お試しください。',
+            showRetry: true
+          };
+        default:
+          // Try to parse error message from response
+          let errorMsg = 'エラーが発生しました。もう一度お試しください。';
+          try {
+            const errorData = JSON.parse(responseText);
+            if (errorData.detail) {
+              errorMsg = errorData.detail;
+            } else if (errorData.message) {
+              errorMsg = errorData.message;
+            }
+          } catch {}
+          
+          return {
+            type: 'error',
+            title: 'エラー',
+            details: errorMsg,
+            showRetry: true
+          };
+      }
     }
 
     function renderCitations(list){
@@ -708,6 +878,11 @@
               }
             }
           }
+        } else if (!res.ok) {
+          typing.remove();
+          const responseText = await res.text().catch(() => '');
+          const errorInfo = getErrorMessage(res.status, responseText);
+          appendErrorMessage(errorInfo.type, errorInfo.title, errorInfo.details, errorInfo.showRetry);
         } else {
           typing.remove();
           const json = await res.json().catch(()=>({}));
@@ -718,7 +893,12 @@
         }
       } catch (e) {
         typing.remove();
-        appendMessage('ai', '<span style=\"color:#e53e3e\">申し訳ございません。エラーが発生しました。もう一度お試しください。</span>');
+        // Network errors or CORS issues
+        if (e.name === 'TypeError' && e.message.includes('fetch')) {
+          appendErrorMessage('error', 'ネットワークエラー', 'サーバーに接続できません。ネットワーク接続またはCORS設定を確認してください。', true);
+        } else {
+          appendErrorMessage('error', '予期しないエラー', 'エラーが発生しました。もう一度お試しください。', true);
+        }
       } finally {
         sendBtn.disabled = false; textarea.disabled = false; textarea.focus();
       }
