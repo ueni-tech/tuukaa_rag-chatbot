@@ -128,7 +128,7 @@ async def ingest_any_file(
     chunk_size: int | None = Form(None),
     chunk_overlap: int | None = Form(None),
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> GenericUploadResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -196,7 +196,7 @@ async def ingest_any_file(
 async def ingest_url(
     p: UrlRequest,
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> dict[str, Any]:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -249,7 +249,7 @@ async def ingest_url(
 async def docs_search(
     req: QuestionRequest,
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> SearchResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -264,7 +264,7 @@ async def docs_ask(
     question_req: QuestionRequest,
     request: Request,
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -475,7 +475,7 @@ async def docs_ask(
 @router.get("/documents", response_model=DocumentListResponse)
 async def docs_list(
     rag: RAGEngine = Depends(get_rag_engine),
-    X_embed_key: str | None = Header(default=None, convert_underscores=False),
+    X_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> DocumentListResponse:
     tenant = _tenant_from_key(X_embed_key)
     if not tenant:
@@ -492,7 +492,7 @@ async def docs_list(
 async def docs_delete(
     req: DeleteDocumentRequest,
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> DeleteDocumentResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
