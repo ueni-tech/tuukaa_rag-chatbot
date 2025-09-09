@@ -26,6 +26,13 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   transform: translateY(0);
   z-index: 2147483647;
+  color: #2d3748;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.box *, .box *::before, .box *::after {
+  box-sizing: border-box;
 }
 
 .box.opening {
@@ -191,25 +198,37 @@
   border-radius: 0 0 20px 20px;
 }
 
-.foot textarea {
+.foot .input-wrap {
   flex: 1;
   border: 2px solid #e2e8f0;
   border-radius: 14px;
+  background: #f8fafc;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: stretch;
+  min-height: 44px;
+}
+
+.foot textarea {
+  flex: 1;
+  border: none;
   padding: 12px 16px;
   font: inherit;
   font-size: 14px;
-  background: #f8fafc;
-  transition: all 0.2s ease;
+  background: transparent;
   outline: none;
   resize: none;
-  height: 44px;
+  height: 66px;
   overflow-y: auto;
   word-wrap: break-word;
   white-space: pre-wrap;
   line-height: 1.4;
+  scrollbar-gutter: stable;
+  padding-right: 18px;
+  background-clip: padding-box;
 }
 
-.foot textarea:focus {
+.foot .input-wrap:focus-within {
   border-color: #4a5568;
   background: white;
   box-shadow: 0 0 0 3px rgba(74, 85, 104, 0.1);
@@ -218,6 +237,14 @@
 .foot textarea::placeholder {
   color: #a0aec0;
 }
+
+/* Textarea scrollbar adjustments (WebKit) */
+.foot textarea::-webkit-scrollbar { width: 8px; }
+.foot textarea::-webkit-scrollbar-track { margin: 6px; border-radius: 8px; background: transparent; }
+.foot textarea::-webkit-scrollbar-thumb { background: rgba(74, 85, 104, 0.3); border-radius: 8px; }
+.foot textarea::-webkit-scrollbar-thumb:hover { background: rgba(74, 85, 104, 0.45); cursor: pointer; }
+/* Default cursor for text editing */
+.foot textarea { cursor: text; }
 
 .foot button {
   border: none;
@@ -283,9 +310,9 @@
   color: inherit;
 }
 
-.bubble h1 { font-size: 1.2rem; }
-.bubble h2 { font-size: 1.1rem; }
-.bubble h3 { font-size: 1rem; }
+.bubble h1 { font-size: 19px; }
+.bubble h2 { font-size: 17px; }
+.bubble h3 { font-size: 16px; }
 
 .bubble p {
   margin: 0.4em 0;
@@ -601,7 +628,9 @@
         </div>
       </div>
       <div class="foot">
-        <textarea placeholder="ご質問をお聞かせください...&#10;Shift+Enterで改行"></textarea>
+        <div class="input-wrap">
+          <textarea placeholder="ご質問をお聞かせください...&#10;Shift+Enterで改行"></textarea>
+        </div>
         <button>送信</button>
       </div>
     `;
@@ -920,6 +949,19 @@
         sendBtn.click();
       }
     });
+
+    // Pointer cursor when hovering over the scrollbar area (heuristic)
+    // Compute if mouse is within 12px from the right edge of the textarea's content box
+    function updateScrollbarCursor(e){
+      const rect = textarea.getBoundingClientRect();
+      const dx = rect.right - e.clientX;
+      const nearScrollbar = dx >= 0 && dx <= 12; // heuristic width including overlay scrollbars
+      // Only when overflow-y is scrollable and content exceeds height
+      const scrollable = textarea.scrollHeight > textarea.clientHeight;
+      textarea.style.cursor = (nearScrollbar && scrollable) ? 'pointer' : 'text';
+    }
+    textarea.addEventListener('mousemove', updateScrollbarCursor);
+    textarea.addEventListener('mouseleave', ()=>{ textarea.style.cursor = 'text'; });
 
     // toggle open/close
     let open = false;
