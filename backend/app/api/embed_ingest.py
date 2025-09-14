@@ -446,8 +446,19 @@ async def docs_ask(
     if "text/event-stream" in accept:
 
         async def gen():
+            # 初回ハートビート（SSEコメント）
+            try:
+                yield ":\n\n"
+            except Exception:
+                return
+            last_hb = time.monotonic()
             for line in (answer_text or "").splitlines():
                 yield f"data: {line}\n\n"
+                # 心拍を一定間隔で送信
+                now = time.monotonic()
+                if now - last_hb >= 5.0:
+                    yield ":\n\n"
+                    last_hb = now
                 await asyncio.sleep(0.01)
             payload = {
                 "citations": [c.model_dump() for c in (citations or [])]
