@@ -141,3 +141,12 @@ class GenericUploadResponse(BaseModel):
     collection_id: str = Field(..., description="ChromaコレクションID")
     filename: str = Field(..., description="元ファイル名")
     tenant: str | None = Field(None, description="テナント識別子")
+
+
+class TenantInfo(BaseModel):
+    name: str = Field(..., description="テナント名")
+    key: str = Field(..., description="埋め込みキー")
+
+
+class TenantListResponse(BaseModel):
+    tenants: list[TenantInfo] = Field(..., description="テナント一覧")
