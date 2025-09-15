@@ -45,6 +45,7 @@ export default function EmbedAdminApp() {
   const [selectedTenant, setSelectedTenant] = useState<string>('')
   const [selectedKey, setSelectedKey] = useState<string>('')
   const [files, setFiles] = useState<FileInfo[]>([])
+  const [targetUrl, setTargetUrl] = useState<string>('')
   const [loadingTenants, setLoadingTenants] = useState(false)
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -158,6 +159,39 @@ export default function EmbedAdminApp() {
         method: 'POST',
         body: fd,
         headers: { 'x-embed-key': selectedKey },
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(e?.detail || 'アップロードに失敗しました')
+      }
+      toast.success('アップロードしました')
+      const list = await fetch(`/api/embed-admin/documents`, {
+        headers: { 'x-embed-key': selectedKey },
+      })
+      const data = await list.json()
+      setFiles(data?.files || [])
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } catch (e: any) {
+      toast.error(e?.message || 'アップロードに失敗しました')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const onUploadUrl = async () => {
+    if (!selectedTenant || !selectedKey) {
+      toast.error('テナントを選択してください')
+      return
+    }
+    setUploading(true)
+    try {
+      const res = await fetch(`/api/embed-admin/upload/url`, {
+        method: 'POST',
+        body: JSON.stringify({ targetUrl }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-embed-key': selectedKey,
+        },
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
@@ -304,7 +338,7 @@ export default function EmbedAdminApp() {
           <Card className="p-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
-                <Label>ファイルを選択</Label>
+                <Label className="mb-2">アップロードするファイルを選択</Label>
                 <Input
                   ref={fileInputRef}
                   type="file"
@@ -314,6 +348,28 @@ export default function EmbedAdminApp() {
               <Button
                 type="button"
                 onClick={onUpload}
+                disabled={!selectedTenant || !selectedKey || uploading}
+              >
+                <Upload className="w-4 h-4 mr-1" />
+                {uploading ? 'アップロード中...' : 'アップロード'}
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <Label className="mb-2">URLからHTMLテキストを抽出</Label>
+                <Input
+                  type="text"
+                  value={targetUrl}
+                  onChange={e => setTargetUrl(e.target.value)}
+                  placeholder="URLを入力してください"
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={onUploadUrl}
                 disabled={!selectedTenant || !selectedKey || uploading}
               >
                 <Upload className="w-4 h-4 mr-1" />
