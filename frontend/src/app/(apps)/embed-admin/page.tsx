@@ -338,7 +338,12 @@ export default function EmbedAdminApp() {
           <Card className="p-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
-                <Label className="mb-2">アップロードするファイルを選択</Label>
+                <div className="space-y-1 mb-2">
+                  <Label>アップロードするファイルを選択</Label>
+                  <span className="text-xs text-muted-foreground">
+                    対応拡張子: .pdf, .txt, .md, .markdown, .docx, .pptx, .xlsx
+                  </span>
+                </div>
                 <Input
                   ref={fileInputRef}
                   type="file"
