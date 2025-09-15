@@ -56,10 +56,7 @@ export default function EmbedAdminApp() {
     const loadTenants = async () => {
       setLoadingTenants(true)
       try {
-        const res = await fetch(
-          `${config.apiUrl}${config.apiBasePath}/admin/tenants`,
-          { method: 'GET' }
-        )
+        const res = await fetch(`/api/embed-admin/tenants`, { method: 'GET' })
         if (!res.ok) throw new Error('テナント一覧の取得に失敗しました')
         const data = await res.json()
         const list = (data?.tenants || []) as TenantInfo[]
@@ -85,12 +82,9 @@ export default function EmbedAdminApp() {
       }
       setLoadingFiles(true)
       try {
-        const res = await fetch(
-          `${config.apiUrl}${config.apiBasePath}/embed/docs/documents`,
-          {
-            headers: { 'x-embed-key': selectedKey },
-          }
-        )
+        const res = await fetch(`/api/embed-admin/documents`, {
+          headers: { 'x-embed-key': selectedKey },
+        })
         if (!res.ok) throw new Error('ファイル一覧の取得に失敗しました')
         const data = await res.json()
         setFiles(data?.files || [])
@@ -160,25 +154,19 @@ export default function EmbedAdminApp() {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await fetch(
-        `${config.apiUrl}${config.apiBasePath}/embed/docs/upload`,
-        {
-          method: 'POST',
-          body: fd,
-          headers: { 'x-embed-key': selectedKey },
-        }
-      )
+      const res = await fetch(`/api/embed-admin/upload`, {
+        method: 'POST',
+        body: fd,
+        headers: { 'x-embed-key': selectedKey },
+      })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
         throw new Error(e?.detail || 'アップロードに失敗しました')
       }
       toast.success('アップロードしました')
-      const list = await fetch(
-        `${config.apiUrl}${config.apiBasePath}/embed/docs/documents`,
-        {
-          headers: { 'x-embed-key': selectedKey },
-        }
-      )
+      const list = await fetch(`/api/embed-admin/documents`, {
+        headers: { 'x-embed-key': selectedKey },
+      })
       const data = await list.json()
       setFiles(data?.files || [])
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -193,17 +181,14 @@ export default function EmbedAdminApp() {
     if (!selectedTenant || !selectedKey) return
     if (!confirm(`削除しますか？\n${f.filename}`)) return
     try {
-      const res = await fetch(
-        `${config.apiUrl}${config.apiBasePath}/embed/docs/documents`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-embed-key': selectedKey,
-          },
-          body: JSON.stringify({ filename: f.filename, file_id: f.file_id }),
-        }
-      )
+      const res = await fetch(`/api/embed-admin/documents`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-embed-key': selectedKey,
+        },
+        body: JSON.stringify({ filename: f.filename, file_id: f.file_id }),
+      })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
         throw new Error(e?.detail || '削除に失敗しました')
