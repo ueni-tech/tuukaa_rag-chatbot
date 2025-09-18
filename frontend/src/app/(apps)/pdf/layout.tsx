@@ -19,10 +19,9 @@ export default function Layout({
   children: React.ReactNode
 }>) {
   return (
-    <SidebarProvider defaultOpen={true}>
-      <AppSidebar />
+    <>
       <main className="flex-1 flex flex-col min-h-screen">{children}</main>
       <Toaster />
-    </SidebarProvider>
+    </>
   )
 }
