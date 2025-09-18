@@ -16,7 +16,9 @@ from fastapi import (
     Request,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, NonNegativeInt
+from redis import Redis
+import os
 
 from ..core.config import settings
 from ..core.web.dependencies import get_rag_engine
@@ -81,18 +83,40 @@ import json
 import time
 
 _rpm: dict[tuple[str, str, str], tuple[int, float]] = {}
-_cost: dict[str, float] = {}
-_DEF_PRICE = 0.002  # 仮のJPY/token 単価
+_cost: dict[tuple[str, str], float] = {}
+
+try:
+    # 既定: 1M tokens あたり 10 USD を為替換算 → JPY/token
+    default_usd_per_mtoken = 10.0
+    _DEF_PRICE = (float(default_usd_per_mtoken) / 1_000_000.0) * float(
+        getattr(settings, "usd_jpy_rate", 150.0)
+    )
+except Exception:
+    # 例外時も同一基準で換算（単位一貫性を維持）
+    _DEF_PRICE = (10.0 / 1_000_000.0) * float(getattr(settings, "usd_jpy_rate", 150.0))
+
 _RESP_MAX_TOKENS = 1024
 
 
-def _origin_allowed(origin: str | None) -> bool:
-    allowed = settings.embed_allowed_origins_list
-    if not origin:
-        return True
-    if "*" in allowed:
-        return True
-    return origin in allowed
+# JSTの翌日0時までの残秒数を返す
+def _second_until_next_jst_midnight(now: dt.datetime | None = None) -> int:
+    jst = dt.timezone(dt.timedelta(hours=9))
+    now = now or dt.datetime.now(jst)
+    next_day = (now + dt.timedelta(days=1)).date()
+    next_midnight = dt.datetime.combine(next_day, dt.time(0, 0, 0), tzinfo=jst)
+    return max(1, int((next_midnight - now).total_seconds()))
+
+
+def _get_redis() -> Redis | None:
+    url = getattr(settings, "redis_url", None) or os.getenv("REDIS_URL")
+    if not url:
+        return None
+    try:
+        client = Redis.from_url(url, decode_responses=True)
+        client.ping()
+        return client
+    except Exception:
+        return None
 
 
 # NOTE
@@ -104,7 +128,7 @@ async def ingest_any_file(
     chunk_size: int | None = Form(None),
     chunk_overlap: int | None = Form(None),
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> GenericUploadResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -172,7 +196,7 @@ async def ingest_any_file(
 async def ingest_url(
     p: UrlRequest,
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> dict[str, Any]:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -225,7 +249,7 @@ async def ingest_url(
 async def docs_search(
     req: QuestionRequest,
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> SearchResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -240,16 +264,11 @@ async def docs_ask(
     question_req: QuestionRequest,
     request: Request,
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
-
-    # Allowlist (Origin)
-    origin = request.headers.get("origin") if request else None
-    if not _origin_allowed(origin):
-        raise HTTPException(403, "origin not allowed")
 
     # RPM 制限
     ip = request.client.host if request and request.client else "0.0.0.0"
@@ -266,14 +285,44 @@ async def docs_ask(
     # 日次ブレーカ（事前見積り）
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
-    used = _cost.get(day, 0.0)
-    pre_tokens = max(1, len((question_req.question or "")) // 4) + _RESP_MAX_TOKENS
-    pre_est_cost = pre_tokens * _DEF_PRICE
+    # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
+    selected_model = (question_req.model or settings.default_model or "").strip()
+    inout = settings.model_pricing_inout_map.get(selected_model)
+    if inout is None:
+        usd_in = usd_out = None
+    else:
+        usd_in, usd_out = inout
+    if usd_in is None:
+        jpy_in = _DEF_PRICE
+    else:
+        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    if usd_out is None:
+        jpy_out = _DEF_PRICE
+    else:
+        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+
+    max_out = question_req.max_output_tokens or getattr(
+        settings, "default_max_output_tokens", _RESP_MAX_TOKENS
+    )
+
+    # 入力見積: 質問 + 参照文書(後で実際に取得するため、ここでは概算: 質問長のk倍)
+    # 事前見積は保守的に質問長×2 をRAGコンテキスト概算とする
+    qlen = len((question_req.question or ""))
+    input_est_tokens = max(1, (qlen + 2 * qlen) // 4)  # question + approx(context)
+    output_est_tokens = max_out
+    pre_est_cost = input_est_tokens * jpy_in + output_est_tokens * jpy_out
+    rc = _get_redis()
+    if rc:
+        key = f"cost:{day}:{tenant}"
+        used = float(rc.get(key) or 0.0)
+    else:
+        used = _cost.get((day, tenant), 0.0)
+
     if (
         settings.daily_budget_jpy > 0
         and used + pre_est_cost > settings.daily_budget_jpy
     ):
-        raise HTTPException(402, "daily budget exceeded")
+        raise HTTPException(402, "本日の使用上限に達しました")
 
     # 回答生成（テナント分離）
     result = await rag.generate_answer(
@@ -329,16 +378,53 @@ async def docs_ask(
             )
         )
 
-    # コスト（日次ブレーカ）
+    # コスト（日次ブレーカ） 実績: 入力(質問+実際のcontext) と 出力(回答) を分離
     answer_text = result.get("answer", "")
-    tokens = max(1, len((question_req.question + "\n" + answer_text)) // 4)
+    context_used = result.get("context_used", "")
+    input_tokens = max(1, len((question_req.question + "\n" + context_used)) // 4)
+    output_tokens = max(1, len(answer_text) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
-    used = _cost.get(day, 0.0)
-    est_cost = tokens * _DEF_PRICE
-    if settings.daily_budget_jpy > 0 and used + est_cost > settings.daily_budget_jpy:
-        raise HTTPException(402, "daily budget exceeded")
-    _cost[day] = used + est_cost
+    # 事後計上: in/out 単価で合計
+    selected_model = (question_req.model or settings.default_model or "").strip()
+    inout = settings.model_pricing_inout_map.get(selected_model)
+    if inout is None:
+        usd_in = usd_out = None
+    else:
+        usd_in, usd_out = inout
+    if usd_in is None:
+        jpy_in = _DEF_PRICE
+    else:
+        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    if usd_out is None:
+        jpy_out = _DEF_PRICE
+    else:
+        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+
+    est_cost = input_tokens * jpy_in + output_tokens * jpy_out
+    rc = _get_redis()
+    if rc:
+        key = f"cost:{day}:{tenant}"
+        used = float(rc.get(key) or 0.0)
+        if (
+            settings.daily_budget_jpy > 0
+            and used + est_cost > settings.daily_budget_jpy
+        ):
+            raise HTTPException(402, "本日の使用上限に達しました")
+        pipe = rc.pipeline()
+        pipe.incrbyfloat(key, est_cost)
+        pipe.ttl(key)
+        _, ttl = pipe.execute()
+        if ttl == -1:
+            rc.expire(key, _second_until_next_jst_midnight(jst))
+    else:
+        used = _cost.get((day, tenant), 0.0)
+        if (
+            settings.daily_budget_jpy > 0
+            and used + est_cost > settings.daily_budget_jpy
+        ):
+            raise HTTPException(402, "本日の予算を超過しました")
+        _cost[(day, tenant)] = used + est_cost
 
     # JSON ログ
     def _hash(v: str) -> str:
@@ -349,24 +435,35 @@ async def docs_ask(
         "key_hash": _hash(x_embed_key or ""),
         "tenant": tenant,
         "question_hash": _hash(question_req.question),
-        "tokens": tokens,
+        "tokens": input_tokens + output_tokens,
         "cost_jpy": round(est_cost, 4),
         "status": "ok",
     }
-    print(json.dump(log, ensure_ascii=False))
+    print(json.dumps(log, ensure_ascii=False))
 
     # SSE or JSON
     accept = request.headers.get("accept", "").lower() if request else ""
     if "text/event-stream" in accept:
 
         async def gen():
+            # 初回ハートビート（SSEコメント）
+            try:
+                yield ":\n\n"
+            except Exception:
+                return
+            last_hb = time.monotonic()
             for line in (answer_text or "").splitlines():
                 yield f"data: {line}\n\n"
+                # 心拍を一定間隔で送信
+                now = time.monotonic()
+                if now - last_hb >= 5.0:
+                    yield ":\n\n"
+                    last_hb = now
                 await asyncio.sleep(0.01)
             payload = {
                 "citations": [c.model_dump() for c in (citations or [])]
                 or ["引用なし"],
-                "tokens": tokens,
+                "tokens": input_tokens + output_tokens,
                 "cost_jpy": round(est_cost, 4),
             }
             yield "event: citations\n"
@@ -381,7 +478,7 @@ async def docs_ask(
         context_used=result["context_used"],
         llm_model=result["llm_model"],
         citations=citations or [DocumentInfo(content="引用なし", metadata={})],
-        tokens=tokens,
+        tokens=input_tokens + output_tokens,
         cost_jpy=round(est_cost, 4),
     )
 
@@ -389,7 +486,7 @@ async def docs_ask(
 @router.get("/documents", response_model=DocumentListResponse)
 async def docs_list(
     rag: RAGEngine = Depends(get_rag_engine),
-    X_embed_key: str | None = Header(default=None, convert_underscores=False),
+    X_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> DocumentListResponse:
     tenant = _tenant_from_key(X_embed_key)
     if not tenant:
@@ -406,7 +503,7 @@ async def docs_list(
 async def docs_delete(
     req: DeleteDocumentRequest,
     rag: RAGEngine = Depends(get_rag_engine),
-    x_embed_key: str | None = Header(default=None, convert_underscores=False),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> DeleteDocumentResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:

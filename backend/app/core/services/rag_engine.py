@@ -27,24 +27,37 @@ class RAGEngine:
     ベクトルストアの管理、文書検索、回答生成を統合的に行う
     """
 
-    # RAG用プロンプトテンプレート
-    RAG_PROMPT_TEMPLATE = """\\
-あなたは優秀な社内ルールのアシスタントです。
-提供されたコンテキスト情報を基に、ユーザーの質問に正確で実用的な回答を提供してください。
+    # RAG用プロンプトテンプレート（GFM厳密・冗長抑制）
+    RAG_PROMPT_TEMPLATE = """\
+あなたは頼れる情報アシスタントです。アップロードされた資料の内容に基づいて、分かりやすく親しみやすい日本語でお答えします。
 
-**重要な指示:**
-- コンテキストに含まれている情報のみを使用してください
-- コードの例やベストプラクティスを含めて、実用的な回答を心がけてください
-- 回答は日本語で行い、わかりやすく説明してください
-- 回答は必ずマークダウン形式で行ってください。
+重要な回答ルール:
+1. **アップロードされた資料に関係のない質問には答えません**
+   - 資料に含まれていない情報について聞かれた場合は、「申し訳ございませんが、そのご質問には回答できません。」と回答してください
+   - 一般的な知識や資料と無関係な質問には対応しません
 
-**コンテキスト:**
+2. **挨拶への対応**
+   - 「こんにちは」「おはよう」「お疲れ様」などの挨拶と判断できる質問には、簡潔で親しみやすい挨拶を返してください
+
+3. **資料に基づく回答**
+   - 提供されたコンテキストに含まれる情報のみを使用して回答します
+   - 推測や想像ではなく、資料に明記されている内容を基に回答します
+
+出力フォーマット（GitHub Flavored Markdown/GFM）:
+- 回答全体を三連バッククォートで囲まず、先頭に「markdown」も不要です
+- 見出しは #, ##, ### を使って整理しましょう
+- 要点は箇条書き（- または *）や番号付き（1.）でまとめます
+- コード例が必要な場合は ```言語名 で囲んで、実用的な例をご紹介します
+- 表が役立つ場合はGFMテーブルで整理します
+- 結論→根拠→具体例の順で、お話しするような感じで回答します
+
+【コンテキスト】
 {context}
 
-**質問:**
+【質問】
 {question}
 
-**回答:**"""
+【回答】"""
 
     def __init__(self):
         self.chroma_settings = ChromaSettings(
@@ -317,10 +330,19 @@ class RAGEngine:
                 {"context": lambda x: context, "question": RunnablePassthrough()}
                 | prompt
                 | llm
-                | StrOutputParser()
             )
 
-            answer = await rag_chain.ainvoke(question)
+            msg = await rag_chain.ainvoke(question)
+            answer = getattr(msg, "content", str(msg))
+
+            # APIレスポンス由来のモデル名を優先（無ければused_model）
+            resp_meta = getattr(msg, "response_metadata", {}) or {}
+            resp_model = (
+                resp_meta.get("model_name")
+                or resp_meta.get("model")
+                or getattr(msg, "model", None)
+            )
+            actual_model = resp_model or used_model
 
             return {
                 "answer": answer,
@@ -329,7 +351,7 @@ class RAGEngine:
                     for doc in documents
                 ],
                 "context_used": context,
-                "llm_model": used_model,
+                "llm_model": actual_model,
             }
 
         except Exception as e:

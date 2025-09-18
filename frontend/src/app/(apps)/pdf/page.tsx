@@ -71,13 +71,14 @@ export default function ChatPage() {
   const topK = useSettingsStore(s => s.topK)
 
   const MODELS = [
-    'gpt-4o-mini',
-    'gpt-4.1-nano',
-    'gpt-4.1-mini',
+    'gpt-5',
+    'gpt-5-mini',
+    'gpt-4.1',
     'gpt-4o',
+    'gpt-4o-mini',
   ] as const
   type Model = (typeof MODELS)[number]
-  const DEFAULT_MODEL: Model = 'gpt-4o-mini'
+  const DEFAULT_MODEL: Model = 'gpt-5-mini'
   const [model, setModel] = useState<Model>(DEFAULT_MODEL)
   const mounted = useRef(false)
   const isModel = (v: string): v is Model =>
@@ -312,10 +313,11 @@ export default function ChatPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
-                <SelectItem value="gpt-4.1-nano">gpt-4.1-nano</SelectItem>
-                <SelectItem value="gpt-4.1-mini">gpt-4.1-mini</SelectItem>
+                <SelectItem value="gpt-5">gpt-5</SelectItem>
+                <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
+                <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
                 <SelectItem value="gpt-4o">gpt-4o</SelectItem>
+                <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
               </SelectContent>
             </Select>
           </div>
