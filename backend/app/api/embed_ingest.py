@@ -85,15 +85,17 @@ _rpm: dict[tuple[str, str, str], tuple[int, float]] = {}
 _cost: dict[tuple[str, str], float] = {}
 
 try:
-    # 既定: 1M tokens あたり 10 USD を為替換算 → JPY/token
-    default_usd_per_mtoken = 10.0
-    _DEF_PRICE = (float(default_usd_per_mtoken) / 1_000_000.0) * float(
-        getattr(settings, "usd_jpy_rate", 150.0)
-    )
+    # 既定: gpt-4o-mini の実コスト（USD/1M tokens）を為替換算 → JPY/token（in/out 別）
+    DEFAULT_USD_PER_MTOKEN_IN = 0.15
+    DEFAULT_USD_PER_MTOKEN_OUT = 0.60
+    _RATE = float(getattr(settings, "usd_jpy_rate", 150.0))
+    _DEF_PRICE_IN = (float(DEFAULT_USD_PER_MTOKEN_IN) / 1_000_000.0) * _RATE
+    _DEF_PRICE_OUT = (float(DEFAULT_USD_PER_MTOKEN_OUT) / 1_000_000.0) * _RATE
 except Exception:
-    # 例外時も同一基準で換算（単位一貫性を維持）
-    _DEF_PRICE = (10.0 / 1_000_000.0) * \
-        float(getattr(settings, "usd_jpy_rate", 150.0))
+    # 例外時も gpt-4o-mini の in/out で換算（単位一貫性を維持）
+    _RATE = float(getattr(settings, "usd_jpy_rate", 150.0))
+    _DEF_PRICE_IN = (0.15 / 1_000_000.0) * _RATE
+    _DEF_PRICE_OUT = (0.60 / 1_000_000.0) * _RATE
 
 _RESP_MAX_TOKENS = 1024
 
@@ -304,12 +306,12 @@ async def docs_ask(
         else:
             usd_in, usd_out = inout
         if usd_in is None:
-            jpy_in = _DEF_PRICE
+            jpy_in = _DEF_PRICE_IN
         else:
             jpy_in = float(usd_in) * \
                 float(getattr(settings, "usd_jpy_rate", 150.0))
         if usd_out is None:
-            jpy_out = _DEF_PRICE
+            jpy_out = _DEF_PRICE_OUT
         else:
             jpy_out = float(usd_out) * \
                 float(getattr(settings, "usd_jpy_rate", 150.0))
@@ -370,12 +372,12 @@ async def docs_ask(
     else:
         usd_in, usd_out = inout
     if usd_in is None:
-        jpy_in = _DEF_PRICE
+        jpy_in = _DEF_PRICE_IN
     else:
         jpy_in = float(usd_in) * \
             float(getattr(settings, "usd_jpy_rate", 150.0))
     if usd_out is None:
-        jpy_out = _DEF_PRICE
+        jpy_out = _DEF_PRICE_OUT
     else:
         jpy_out = float(usd_out) * \
             float(getattr(settings, "usd_jpy_rate", 150.0))
