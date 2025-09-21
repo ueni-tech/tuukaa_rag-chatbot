@@ -853,7 +853,7 @@
     // AbortController（現在のリクエストのキャンセル制御）
     let currentController = null
     // タイムアウト（初回バイト/ハートビート）
-    const FIRST_BYTE_TIMEOUT_MS = 20000
+    const FIRST_BYTE_TIMEOUT_MS = 40000
     const HEARTBEAT_TIMEOUT_MS = 20000
 
     async function ask(q) {

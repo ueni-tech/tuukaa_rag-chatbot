@@ -29,7 +29,8 @@ class RAGEngine:
 
     # RAG用プロンプトテンプレート（GFM厳密・冗長抑制）
     RAG_PROMPT_TEMPLATE = """\
-あなたは頼れる情報アシスタントです。アップロードされた資料の内容に基づいて、分かりやすく親しみやすい日本語でお答えします。
+あなたは頼れる情報アシスタントです。アップロードされた資料の内容に基づいて、分かりやすく親しみやすい日本語で回答してください。
+すばやく回答してください。
 
 重要な回答ルール:
 1. **アップロードされた資料に関係のない質問には答えません**
@@ -89,7 +90,8 @@ class RAGEngine:
                 else None
             )
             self._llm_cache[key] = ChatOpenAI(
-                model=used_model, temperature=used_temp, api_key=api_key, timeout=60
+                model=used_model, temperature=used_temp, api_key=api_key, timeout=60,
+                max_tokens=settings.default_max_output_tokens,
             )
         return self._llm_cache[key], used_model
 
@@ -117,6 +119,7 @@ class RAGEngine:
                 model=settings.default_model,
                 temperature=settings.default_temperature,
                 api_key=api_key,
+                max_tokens=settings.default_max_output_tokens,
             )
 
             await self._load_existing_vectorstore()
@@ -335,6 +338,9 @@ class RAGEngine:
                 }
 
             context = self._format_documents(documents)
+            # 速度最適化: コンテキストを最大約4000文字に制限（≈1000トークン目安）
+            if len(context) > 4000:
+                context = context[:4000]
 
             if model is not None or temperature is not None:
                 llm, used_model = self._get_llm(model, temperature)
@@ -468,7 +474,8 @@ class RAGEngine:
             conditions = [{"file_id": {"$eq": file_id}}]
             if tenant is not None:
                 conditions.append({"tenant": {"$eq": tenant}})
-            where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
+            where = {"$and": conditions} if len(
+                conditions) > 1 else conditions[0]
 
             results = collection.get(where=where, include=["metadatas"])
             ids = results.get("ids") or []

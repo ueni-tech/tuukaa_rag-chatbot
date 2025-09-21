@@ -4,10 +4,11 @@ export const maxDuration = 30
 
 export async function POST(req: Request) {
   try {
-    const { messages, model, top_k, admin, embedKey } = await req.json()
+    const { question, model, top_k } = await req.json()
 
-    const lastMessage = messages[messages.length - 1]
-    const question = lastMessage?.content || ''
+    // ヘッダーから認証情報を取得
+    const embedKey = req.headers.get('x-embed-key')
+    const adminSecret = req.headers.get('x-admin-api-secret')
 
     if (!question.trim()) {
       return Response.json(
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
       'Content-Type': 'application/json',
     }
     if (embedKey) headers['x-embed-key'] = String(embedKey)
-    if (admin && serverConfig.adminApiSecret)
+    if (adminSecret && serverConfig.adminApiSecret)
       headers['x-admin-api-secret'] = String(serverConfig.adminApiSecret)
 
     const askResponse = await fetch(url, {
@@ -60,7 +61,6 @@ export async function POST(req: Request) {
       content: data.answer,
       question: data.question,
       documents: data.documents,
-      context_used: data.context_used,
       llm_model: data.llm_model,
     })
   } catch (error) {

@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
 
     # LLM設定
-    default_model: str = "gpt-5-mini"
+    default_model: str = "gpt-4o-mini"
     default_temperature: float = 0.2
-    default_top_k: int = 3
+    default_top_k: int = 2
     max_chunk_size: int = 2000
     chunk_overlap: int = 200
 
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # === 料金・トークン上限 ===
     model_pricing: str | None = None  # 例: "gpt-4o-mini:0.002,gpt-4o:0.006"
-    default_max_output_tokens: int = 2048
+    default_max_output_tokens: int = 768
     # USD→JPY 為替レート（MODEL_PRICING を USD/token として受け取る想定）
     usd_jpy_rate: float = 148.117
 

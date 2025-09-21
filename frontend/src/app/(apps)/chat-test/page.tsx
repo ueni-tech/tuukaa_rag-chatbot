@@ -172,18 +172,20 @@ export default function ChatPage() {
       const model =
         typeof window !== 'undefined' ? localStorage.getItem('llm:model') : null
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (selectedKey) headers['x-embed-key'] = selectedKey
+      // 管理画面なので常にadmin権限を付与
+      headers['x-admin-api-secret'] = 'admin'
+
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
-          messages: [...messages, userMessage],
-          askToBot: isBot,
-          model: model || undefined,
+          question: userMessage.content,
           top_k: topK,
-          admin: true,
-          embedKey: selectedKey || undefined,
+          model: model || undefined,
         }),
       })
 

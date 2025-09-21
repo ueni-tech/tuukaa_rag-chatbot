@@ -452,7 +452,6 @@ async def docs_ask(
         answer=answer_text,
         question=question_req.question,
         documents=documents_items,
-        context_used=result["context_used"],
         llm_model=result["llm_model"],
         tokens=input_tokens + output_tokens,
         cost_jpy=round(est_cost, 4),
