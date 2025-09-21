@@ -2,14 +2,12 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card } from '@/components/ui/card'
-import { Send, Bot, User, Search, Thermometer } from 'lucide-react'
-import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Send, Bot, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { config } from '@/lib/config'
-import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -69,7 +67,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isBot, setIsBot] = useState(true)
+  const [isBot] = useState(true)
   const topK = useSettingsStore(s => s.topK)
   const [tenants, setTenants] = useState<TenantInfo[]>([])
   const [selectedTenant, setSelectedTenant] = useState('')
@@ -340,66 +338,76 @@ export default function ChatPage() {
       {/* Input Form */}
       <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <form
-          className="flex gap-2 p-4 max-w-5xl mx-auto"
+          className="flex items-start gap-4 px-2 py-6 max-w-5xl mx-auto"
           onSubmit={handleSubmit}
         >
-          <Select
-            value={isInitialized ? selectedTenant : ''}
-            onValueChange={onChangeTenant}
-            disabled={!isInitialized}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue
-                placeholder={isInitialized ? 'テナント' : '読み込み中...'}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {tenants.map(t => (
-                <SelectItem key={t.key} value={t.name}>
-                  {t.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-2 w-[220px]">
-            <Label className="whitespace-nowrap">top_k: {topK}</Label>
-            <Slider
-              min={1}
-              max={10}
-              step={1}
-              value={[topK]}
-              onValueChange={v => setTopK(v[0] ?? 3)}
-            />
-          </div>
-          {/* LLM */}
-          <div>
+          <div className="flex items-center gap-2">
             <Select
-              value={MODELS.includes(model) ? model : DEFAULT_MODEL}
-              onValueChange={v => {
-                if (v && isModel(v)) setModel(v)
-              }}
+              value={isInitialized ? selectedTenant : ''}
+              onValueChange={onChangeTenant}
+              disabled={!isInitialized}
             >
-              <SelectTrigger
-                className={isBot ? '' : 'cursor-not-allowed'}
-                disabled={!isBot}
-              >
-                <SelectValue />
+              <SelectTrigger className="w-[180px]">
+                <SelectValue
+                  placeholder={isInitialized ? 'テナント' : '読み込み中...'}
+                />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gpt-5">gpt-5</SelectItem>
-                <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
-                <SelectItem value="gpt-4o">gpt-4o</SelectItem>
-                <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                {tenants.map(t => (
+                  <SelectItem key={t.key} value={t.name}>
+                    {t.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2 w-[150px]">
+              <Label className="whitespace-nowrap">top_k: {topK}</Label>
+              <Slider
+                min={1}
+                max={10}
+                step={1}
+                value={[topK]}
+                onValueChange={v => setTopK(v[0] ?? 3)}
+              />
+            </div>
+            {/* LLM */}
+            <div>
+              <Select
+                value={MODELS.includes(model) ? model : DEFAULT_MODEL}
+                onValueChange={v => {
+                  if (v && isModel(v)) setModel(v)
+                }}
+              >
+                <SelectTrigger
+                  className={isBot ? '' : 'cursor-not-allowed'}
+                  disabled={!isBot}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gpt-5">gpt-5</SelectItem>
+                  <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
+                  <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
+                  <SelectItem value="gpt-4o">gpt-4o</SelectItem>
+                  <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <Input
+          <Textarea
             value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Ask a question about your PDF..."
-            className="flex-1"
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+              setInput(e.target.value)
+            }
+            placeholder={`Ask a question about tenant\'s documents...\nShift+Enterで改行`}
+            className="flex-1 min-h-[72px] resize-none"
             disabled={isLoading}
+            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSubmit(e as any)
+              }
+            }}
           />
           <Button type="submit" size="icon" disabled={isLoading}>
             <Send className="h-4 w-4" />

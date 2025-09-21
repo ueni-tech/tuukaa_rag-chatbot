@@ -12,22 +12,16 @@ export default function home() {
 
         <div className="space-y-4">
           <Link
-            href="/pdf"
-            className="block w-full p-4 text-center bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            PDF チャット
-          </Link>
-          <Link
-            href="/lp"
-            className="block w-full p-4 text-center bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            LPテキスト生成/校閲Bot
-          </Link>
-          <Link
             href="/embed-admin"
             className="block w-full p-4 text-center bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
           >
-            サイト埋め込みQAウィジェット管理
+            QAウィジェット ダッシュボード
+          </Link>
+          <Link
+            href="/chat-test"
+            className="block w-full p-4 text-center bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            チャットテスト
           </Link>
         </div>
       </div>

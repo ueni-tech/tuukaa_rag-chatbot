@@ -5,7 +5,6 @@
 
 import os
 from pathlib import Path
-from typing import Optional
 from pydantic_settings import BaseSettings
 
 
@@ -41,11 +40,6 @@ class Settings(BaseSettings):
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     allowed_extensions: list[str] = ["pdf"]
     upload_directory: str = "./uploads"
-
-    # ===== LP Domain =====
-    lp_model: str | None = None
-    lp_tone: str | None = None
-    lp_max_tokens: Optional[int] = None
 
     # ===== Embed Domain =====
     embed_collection_prefix: str | None = None
@@ -102,7 +96,9 @@ class Settings(BaseSettings):
 
     @property
     def embed_allowed_origins_list(self) -> list[str]:
-        raw = os.getenv("EMBED_ALLOWED_ORIGINS") or (self.embed_allowed_origins or "")
+        raw = os.getenv("EMBED_ALLOWED_ORIGINS") or (
+            self.embed_allowed_origins or ""
+        )
         items = [o.strip() for o in raw.split(",") if o.strip()]
         if self.debug:
             return items or ["*"]

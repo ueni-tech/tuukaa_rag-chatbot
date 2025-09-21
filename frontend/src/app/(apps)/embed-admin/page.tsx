@@ -393,7 +393,7 @@ export default function EmbedAdminApp() {
             </div>
           </Card>
 
-          <Card className="p-4">
+          <Card className="p-4 gap-2">
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-semibold">アップロード済みファイル</h2>
               <Button

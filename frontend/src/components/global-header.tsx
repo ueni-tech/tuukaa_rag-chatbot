@@ -20,15 +20,15 @@ export default function GlobalHeader() {
         <div className="ml-auto flex items-center gap-4">
           <Link
             href="/embed-admin"
-            className={`text-sm ${pathname?.startsWith('/embed-admin') ? 'underline font-medium' : 'underline'}`}
+            className={`text-sm ${pathname?.startsWith('/embed-admin') ? 'underline font-semibold' : ''}`}
           >
             Embed Admin
           </Link>
           <Link
-            href="/pdf"
-            className={`text-sm ${pathname?.startsWith('/pdf') ? 'underline font-medium' : 'underline'}`}
+            href="/chat-test"
+            className={`text-sm ${pathname?.startsWith('/chat-test') ? 'underline font-semibold' : ''}`}
           >
-            PDF
+            Chat Test
           </Link>
         </div>
       </div>
