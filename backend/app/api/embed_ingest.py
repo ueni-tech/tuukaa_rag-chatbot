@@ -265,10 +265,16 @@ async def docs_ask(
     request: Request,
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=True),
+    x_admin_api_secret: str | None = Header(default=None, convert_underscores=True),
 ) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
+
+    is_admin = bool(
+        x_admin_api_secret
+        and x_admin_api_secret == getattr(settings, "admin_api_secret", None)
+    )
 
     # RPM 制限
     ip = request.client.host if request and request.client else "0.0.0.0"
@@ -282,47 +288,48 @@ async def docs_ask(
     if cnt > max(1, settings.rate_limit_rpm):
         raise HTTPException(429, "rate limit exceeded")
 
-    # 日次ブレーカ（事前見積り）
-    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
-    day = jst.strftime("%Y-%m-%d")
-    # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
-    selected_model = (question_req.model or settings.default_model or "").strip()
-    inout = settings.model_pricing_inout_map.get(selected_model)
-    if inout is None:
-        usd_in = usd_out = None
-    else:
-        usd_in, usd_out = inout
-    if usd_in is None:
-        jpy_in = _DEF_PRICE
-    else:
-        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
-    if usd_out is None:
-        jpy_out = _DEF_PRICE
-    else:
-        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    # 日次ブレーカ（事前見積り、管理者はバイパス）
+    if not is_admin:
+        jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+        day = jst.strftime("%Y-%m-%d")
+        # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
+        selected_model = (question_req.model or settings.default_model or "").strip()
+        inout = settings.model_pricing_inout_map.get(selected_model)
+        if inout is None:
+            usd_in = usd_out = None
+        else:
+            usd_in, usd_out = inout
+        if usd_in is None:
+            jpy_in = _DEF_PRICE
+        else:
+            jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
+        if usd_out is None:
+            jpy_out = _DEF_PRICE
+        else:
+            jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
 
-    max_out = question_req.max_output_tokens or getattr(
-        settings, "default_max_output_tokens", _RESP_MAX_TOKENS
-    )
+        max_out = question_req.max_output_tokens or getattr(
+            settings, "default_max_output_tokens", _RESP_MAX_TOKENS
+        )
 
-    # 入力見積: 質問 + 参照文書(後で実際に取得するため、ここでは概算: 質問長のk倍)
-    # 事前見積は保守的に質問長×2 をRAGコンテキスト概算とする
-    qlen = len((question_req.question or ""))
-    input_est_tokens = max(1, (qlen + 2 * qlen) // 4)  # question + approx(context)
-    output_est_tokens = max_out
-    pre_est_cost = input_est_tokens * jpy_in + output_est_tokens * jpy_out
-    rc = _get_redis()
-    if rc:
-        key = f"cost:{day}:{tenant}"
-        used = float(rc.get(key) or 0.0)
-    else:
-        used = _cost.get((day, tenant), 0.0)
+        # 入力見積: 質問 + 参照文書(後で実際に取得するため、ここでは概算: 質問長のk倍)
+        # 事前見積は保守的に質問長×2 をRAGコンテキスト概算とする
+        qlen = len((question_req.question or ""))
+        input_est_tokens = max(1, (qlen + 2 * qlen) // 4)  # question + approx(context)
+        output_est_tokens = max_out
+        pre_est_cost = input_est_tokens * jpy_in + output_est_tokens * jpy_out
+        rc = _get_redis()
+        if rc:
+            key = f"cost:{day}:{tenant}"
+            used = float(rc.get(key) or 0.0)
+        else:
+            used = _cost.get((day, tenant), 0.0)
 
-    if (
-        settings.daily_budget_jpy > 0
-        and used + pre_est_cost > settings.daily_budget_jpy
-    ):
-        raise HTTPException(402, "本日の使用上限に達しました")
+        if (
+            settings.daily_budget_jpy > 0
+            and used + pre_est_cost > settings.daily_budget_jpy
+        ):
+            raise HTTPException(402, "本日の使用上限に達しました")
 
     # 回答生成（テナント分離）
     result = await rag.generate_answer(
@@ -486,9 +493,9 @@ async def docs_ask(
 @router.get("/documents", response_model=DocumentListResponse)
 async def docs_list(
     rag: RAGEngine = Depends(get_rag_engine),
-    X_embed_key: str | None = Header(default=None, convert_underscores=True),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> DocumentListResponse:
-    tenant = _tenant_from_key(X_embed_key)
+    tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
     result = await rag.get_document_list(tenant=tenant)

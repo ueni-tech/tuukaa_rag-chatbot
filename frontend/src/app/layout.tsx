@@ -5,6 +5,7 @@ import { SidebarProvider } from '@/components/ui/sidebar'
 import AppSidebar from '@/components/app-sidebar'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
+import GlobalHeader from '@/components/global-header'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -27,7 +28,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <div className="flex min-h-screen flex-col">
+            <GlobalHeader />
+            <main className="flex-1 flex flex-col">{children}</main>
+          </div>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

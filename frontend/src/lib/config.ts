@@ -12,6 +12,6 @@ export const config = {
 
 // サーバーサイドのみで使用
 export const serverConfig = {
-  apiSecret: process.env.API_SECRET_KEY,
+  adminApiSecret: process.env.ADMIN_API_SECRET,
   internalApiUrl: process.env.INTERNAL_API_URL,
 }

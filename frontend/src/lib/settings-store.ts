@@ -11,7 +11,7 @@ type SettingsState = {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     set => ({
-      topK: 5,
+      topK: 3,
       setTopK: n => set({ topK: Math.max(1, n) }),
     }),
     { name: 'settings' }

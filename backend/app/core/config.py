@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     app_name: str = "tuukaa API"
     app_version: str = "0.1.0"
-    debug: bool = True
+    debug: bool = False
 
     host: str = "0.0.0.0"
     port: int = 8000
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # LLM設定
     default_model: str = "gpt-5-mini"
-    default_temperature: float = 0.0
+    default_temperature: float = 0.2
     default_top_k: int = 3
     max_chunk_size: int = 2000
     chunk_overlap: int = 200
@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     embed_api_keys: str | None = None
     rate_limit_rpm: int = 60
     daily_budget_jpy: float = 100.0
+    # 管理者用シークレット
+    admin_api_secret: str | None = None
 
     # ==== Redis設定 ====
     redis_url: str | None = "redis://localhost:6379/0"

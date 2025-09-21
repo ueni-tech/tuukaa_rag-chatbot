@@ -3,7 +3,7 @@ import React from 'react'
 
 export default function home() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-8">
+    <div className="flex flex-col items-center justify-center min-h-full p-8">
       <div className="max-w-md w-full space-y-6">
         <div className="text-center">
           <h1 className="text-3xl font-bold mb-2">Tuukaa</h1>

@@ -63,13 +63,52 @@ interface Message {
   llm_model?: string
 }
 
+type TenantInfo = { name: string; key: string }
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isBot, setIsBot] = useState(true)
   const topK = useSettingsStore(s => s.topK)
+  const [tenants, setTenants] = useState<TenantInfo[]>([])
+  const [selectedTenant, setSelectedTenant] = useState('')
+  const [selectedKey, setSelectedKey] = useState('')
+  const setTopK = useSettingsStore(s => s.setTopK)
 
+  // テナントの初期ロード
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetch('/api/embed-admin/tenants', {
+          cache: 'no-store',
+        })
+        const data = await res.json()
+        const list = (data?.tenants || []) as TenantInfo[]
+        setTenants(list)
+        const saveKey =
+          typeof window !== 'undefined' ? localStorage.getItem('embed:key') : ''
+        const initial = list.find(t => t.key === saveKey) || list[0]
+        if (initial) {
+          setSelectedTenant(initial.name)
+          setSelectedKey(initial.key)
+          try {
+            localStorage.setItem('embed:key', initial.key)
+          } catch {}
+        }
+      } catch {}
+    })()
+  }, [])
+
+  // 選択されたキーを常に localStorage と同期
+  useEffect(() => {
+    if (!selectedKey) return
+    try {
+      localStorage.setItem('embed:key', selectedKey)
+    } catch {}
+  }, [selectedKey])
+
+  // LLMのセットアップ
   const MODELS = [
     'gpt-5',
     'gpt-5-mini',
@@ -96,7 +135,6 @@ export default function ChatPage() {
     mounted.current = true
   }, [])
 
-  // 2回目以降: 変更があったときだけ保存（無効値をブロック）
   useEffect(() => {
     if (!mounted.current) return
     try {
@@ -132,6 +170,8 @@ export default function ChatPage() {
           askToBot: isBot,
           model: model || undefined,
           top_k: topK,
+          admin: true,
+          embedKey: selectedKey || undefined,
         }),
       })
 
@@ -166,20 +206,19 @@ export default function ChatPage() {
     }
   }
 
-  return (
-    <div className="flex flex-col h-screen">
-      {/* Header */}
-      <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 items-center px-4">
-          <div className="flex items-center gap-2 ml-4">
-            <Bot className="h-6 w-6" />
-            <h1 className="font-semibold">{config.appName}</h1>
-          </div>
-        </div>
-      </div>
+  const onChangeTenant = (name: string) => {
+    setSelectedTenant(name)
+    const t = tenants.find(x => x.name === name)
+    setSelectedKey(t?.key || '')
+    try {
+      localStorage.setItem('embed:key', t?.key || '')
+    } catch {}
+  }
 
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Chat Message */}
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="flex-1 min-h-0 p-4">
         <div className="space-y-4 max-w-5xl mx-auto">
           {messages.length === 0 && (
             <div className="text-center text-muted-foreground py-8">
@@ -292,10 +331,32 @@ export default function ChatPage() {
           className="flex gap-2 p-4 max-w-5xl mx-auto"
           onSubmit={handleSubmit}
         >
-          <div className="flex items-center justify-between gap-1">
+          {/* <div className="flex items-center justify-between gap-1">
             <Search className="h-4 w-4" />
             <Switch checked={isBot} onCheckedChange={setIsBot} />
             <Bot className="h-4 w-4" />
+          </div> */}
+          <Select value={selectedTenant} onValueChange={onChangeTenant}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="テナント" />
+            </SelectTrigger>
+            <SelectContent>
+              {tenants.map(t => (
+                <SelectItem key={t.key} value={t.name}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-2 w-[220px]">
+            <Label className="whitespace-nowrap">top_k: {topK}</Label>
+            <Slider
+              min={1}
+              max={10}
+              step={1}
+              value={[topK]}
+              onValueChange={v => setTopK(v[0] ?? 3)}
+            />
           </div>
           {/* LLM */}
           <div>

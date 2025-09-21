@@ -1,10 +1,10 @@
-import { config } from '@/lib/config'
+import { config, serverConfig } from '@/lib/config'
 
 export const maxDuration = 30
 
 export async function POST(req: Request) {
   try {
-    const { messages, askToBot, model, top_k } = await req.json()
+    const { messages, model, top_k, admin, embedKey } = await req.json()
 
     const lastMessage = messages[messages.length - 1]
     const question = lastMessage?.content || ''
@@ -16,18 +16,21 @@ export async function POST(req: Request) {
       )
     }
 
-    const url = askToBot
-      ? `${config.apiUrl}${config.apiBasePath}/pdf/ask`
-      : `${config.apiUrl}${config.apiBasePath}/pdf/search`
+    const url = `${config.apiUrl}${config.apiBasePath}/embed/docs/ask`
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (embedKey) headers['x-embed-key'] = String(embedKey)
+    if (admin && serverConfig.adminApiSecret)
+      headers['x-admin-api-secret'] = String(serverConfig.adminApiSecret)
 
     const askResponse = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         question: question,
-        top_k: typeof top_k === 'number' ? top_k : 5,
+        top_k: typeof top_k === 'number' ? top_k : 3,
         model: model || undefined,
       }),
     })
