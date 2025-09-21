@@ -221,6 +221,7 @@ export default function ChatPage() {
     setSelectedTenant(name)
     const t = tenants.find(x => x.name === name)
     setSelectedKey(t?.key || '')
+    setMessages([])
     try {
       localStorage.setItem('embed:key', t?.key || '')
     } catch {}
