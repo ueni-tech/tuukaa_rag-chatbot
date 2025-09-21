@@ -1,4 +1,9 @@
 from __future__ import annotations
+import time
+import json
+import hashlib
+import datetime as dt
+import asyncio
 
 import re
 import urllib.request
@@ -16,7 +21,6 @@ from fastapi import (
     Request,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, NonNegativeInt
 from redis import Redis
 import os
 
@@ -76,11 +80,6 @@ def _strip_tags(html: str) -> str:
 
 
 # --- /ask の制限・課金用の簡易状態（メモリ内） ---
-import asyncio
-import datetime as dt
-import hashlib
-import json
-import time
 
 _rpm: dict[tuple[str, str, str], tuple[int, float]] = {}
 _cost: dict[tuple[str, str], float] = {}
@@ -93,7 +92,8 @@ try:
     )
 except Exception:
     # 例外時も同一基準で換算（単位一貫性を維持）
-    _DEF_PRICE = (10.0 / 1_000_000.0) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    _DEF_PRICE = (10.0 / 1_000_000.0) * \
+        float(getattr(settings, "usd_jpy_rate", 150.0))
 
 _RESP_MAX_TOKENS = 1024
 
@@ -233,11 +233,12 @@ async def ingest_url(
 
     text = _strip_tags(html)
     if not text:
-        raise HTTPException(400, f"本文抽出に失敗しました")
+        raise HTTPException(400, "本文抽出に失敗しました")
 
     chunk_size = p.chunk_size or settings.max_chunk_size
     chunk_overlap = p.chunk_overlap or settings.chunk_overlap
-    chunks = dp.split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = dp.split_text(text, chunk_size=chunk_size,
+                           chunk_overlap=chunk_overlap)
 
     res = await rag.create_vectorstore_from_chunks(
         chunks, filename=p.url, tenant=tenant, source_type="url", source=p.url
@@ -255,7 +256,8 @@ async def docs_search(
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
     docs = await rag.search_documents(req.question, req.top_k, tenant=tenant)
-    items = [DocumentInfo(content=d.page_content, metadata=d.metadata) for d in docs]
+    items = [DocumentInfo(content=d.page_content,
+                          metadata=d.metadata) for d in docs]
     return SearchResponse(documents=items, query=req.question, total_found=len(items))
 
 
@@ -265,7 +267,8 @@ async def docs_ask(
     request: Request,
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=True),
-    x_admin_api_secret: str | None = Header(default=None, convert_underscores=True),
+    x_admin_api_secret: str | None = Header(
+        default=None, convert_underscores=True),
 ) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -293,7 +296,8 @@ async def docs_ask(
         jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         day = jst.strftime("%Y-%m-%d")
         # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
-        selected_model = (question_req.model or settings.default_model or "").strip()
+        selected_model = (
+            question_req.model or settings.default_model or "").strip()
         inout = settings.model_pricing_inout_map.get(selected_model)
         if inout is None:
             usd_in = usd_out = None
@@ -302,11 +306,13 @@ async def docs_ask(
         if usd_in is None:
             jpy_in = _DEF_PRICE
         else:
-            jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
+            jpy_in = float(usd_in) * \
+                float(getattr(settings, "usd_jpy_rate", 150.0))
         if usd_out is None:
             jpy_out = _DEF_PRICE
         else:
-            jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+            jpy_out = float(usd_out) * \
+                float(getattr(settings, "usd_jpy_rate", 150.0))
 
         max_out = question_req.max_output_tokens or getattr(
             settings, "default_max_output_tokens", _RESP_MAX_TOKENS
@@ -315,7 +321,8 @@ async def docs_ask(
         # 入力見積: 質問 + 参照文書(後で実際に取得するため、ここでは概算: 質問長のk倍)
         # 事前見積は保守的に質問長×2 をRAGコンテキスト概算とする
         qlen = len((question_req.question or ""))
-        input_est_tokens = max(1, (qlen + 2 * qlen) // 4)  # question + approx(context)
+        # question + approx(context)
+        input_est_tokens = max(1, (qlen + 2 * qlen) // 4)
         output_est_tokens = max_out
         pre_est_cost = input_est_tokens * jpy_in + output_est_tokens * jpy_out
         rc = _get_redis()
@@ -340,60 +347,23 @@ async def docs_ask(
         tenant=tenant,
     )
 
-    # 引用情報の縮約・重複排除
-    # documents は全文、citations は参照情報のみ（title/source/page など）
+    # 参照文書の情報を構築
     documents_items = [
         DocumentInfo(content=d["content"], metadata=d["metadata"])
         for d in result["documents"]
     ]
 
-    seen: set[tuple[str | None, int | None, str | None]] = set()
-    citations: list[DocumentInfo] = []
-    for d in result["documents"]:
-        m = d.get("metadata") or {}
-        source = m.get("source") or m.get("filename") or m.get("url") or "unknown"
-        page = m.get("page") or m.get("page_number")
-        try:
-            page_num = int(page) if page is not None else None
-        except Exception:
-            page_num = None
-        key = (str(source) if source is not None else None, page_num, m.get("file_id"))
-        if key in seen:
-            continue
-        seen.add(key)
-
-        title = m.get("title")
-        label_parts = [
-            p
-            for p in [
-                title,
-                source,
-                (f"p.{page_num}" if page_num is not None else None),
-            ]
-            if p
-        ]
-        label = " - ".join(label_parts) if label_parts else str(source)
-
-        citations.append(
-            DocumentInfo(
-                content=label,
-                metadata={
-                    "source": source,
-                    "page": page_num,
-                    "file_id": m.get("file_id"),
-                },
-            )
-        )
-
     # コスト（日次ブレーカ） 実績: 入力(質問+実際のcontext) と 出力(回答) を分離
     answer_text = result.get("answer", "")
     context_used = result.get("context_used", "")
-    input_tokens = max(1, len((question_req.question + "\n" + context_used)) // 4)
+    input_tokens = max(
+        1, len((question_req.question + "\n" + context_used)) // 4)
     output_tokens = max(1, len(answer_text) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
     # 事後計上: in/out 単価で合計
-    selected_model = (question_req.model or settings.default_model or "").strip()
+    selected_model = (
+        question_req.model or settings.default_model or "").strip()
     inout = settings.model_pricing_inout_map.get(selected_model)
     if inout is None:
         usd_in = usd_out = None
@@ -402,11 +372,13 @@ async def docs_ask(
     if usd_in is None:
         jpy_in = _DEF_PRICE
     else:
-        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
+        jpy_in = float(usd_in) * \
+            float(getattr(settings, "usd_jpy_rate", 150.0))
     if usd_out is None:
         jpy_out = _DEF_PRICE
     else:
-        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+        jpy_out = float(usd_out) * \
+            float(getattr(settings, "usd_jpy_rate", 150.0))
 
     est_cost = input_tokens * jpy_in + output_tokens * jpy_out
     rc = _get_redis()
@@ -468,8 +440,6 @@ async def docs_ask(
                     last_hb = now
                 await asyncio.sleep(0.01)
             payload = {
-                "citations": [c.model_dump() for c in (citations or [])]
-                or ["引用なし"],
                 "tokens": input_tokens + output_tokens,
                 "cost_jpy": round(est_cost, 4),
             }
@@ -484,7 +454,6 @@ async def docs_ask(
         documents=documents_items,
         context_used=result["context_used"],
         llm_model=result["llm_model"],
-        citations=citations or [DocumentInfo(content="引用なし", metadata={})],
         tokens=input_tokens + output_tokens,
         cost_jpy=round(est_cost, 4),
     )

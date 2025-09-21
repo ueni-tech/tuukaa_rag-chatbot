@@ -127,20 +127,23 @@ export default function ChatPage() {
   ] as const
   type Model = (typeof MODELS)[number]
   const DEFAULT_MODEL: Model = 'gpt-5-mini'
-  const [model, setModel] = useState<Model>(DEFAULT_MODEL)
   const mounted = useRef(false)
+  const [model, setModel] = useState<Model>(() => {
+    // 初期化時にlocalStorageから読み込む
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('llm:model')
+        if (saved) {
+          return saved as Model
+        }
+      }
+    } catch {}
+    return DEFAULT_MODEL
+  })
   const isModel = (v: string): v is Model =>
     (MODELS as readonly string[]).includes(v)
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('llm:model')
-      if (saved && isModel(saved)) {
-        setModel(saved)
-      } else {
-        setModel(DEFAULT_MODEL)
-      }
-    } catch {}
     mounted.current = true
   }, [])
 
@@ -301,7 +304,7 @@ export default function ChatPage() {
                           <p className="font-medium truncate">
                             {doc.metadata?.souce || `文書 ${docIndex + 1}`}
                           </p>
-                          <p className="line-clamp-2">{doc.content}</p>
+                          <p className="line-clamp-3">{doc.content}</p>
                         </div>
                       ))}
                     </div>
@@ -373,7 +376,7 @@ export default function ChatPage() {
             {/* LLM */}
             <div>
               <Select
-                value={MODELS.includes(model) ? model : DEFAULT_MODEL}
+                value={model}
                 onValueChange={v => {
                   if (v && isModel(v)) setModel(v)
                 }}

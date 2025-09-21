@@ -1,8 +1,8 @@
-(function () {
-  const ATTR_KEY = "data-embed-key";
+;(function () {
+  const ATTR_KEY = 'data-embed-key'
   function createWidget(host) {
-    const shadow = host.attachShadow({ mode: "open" });
-    const style = document.createElement("style");
+    const shadow = host.attachShadow({ mode: 'open' })
+    const style = document.createElement('style')
     style.textContent = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
@@ -403,31 +403,6 @@
   margin: 1em 0;
 }
 
-.cites {
-  margin-top: 12px;
-  border-top: 1px dashed #cbd5e0;
-  padding-top: 8px;
-  font-size: 12px;
-  color: #718096;
-  background: rgba(74, 85, 104, 0.03);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.cites strong {
-  color: #2d3748;
-  font-weight: 600;
-}
-
-.cites ul {
-  margin: 0.4em 0;
-  padding-left: 16px;
-}
-
-.cites li {
-  margin: 0.2em 0;
-  line-height: 1.4;
-}
 
 /* Toggle button */
 .toggle {
@@ -611,11 +586,11 @@
   content: '⏰';
   font-size: 16px;
 }
-`;
-    const container = document.createElement("div");
+`
+    const container = document.createElement('div')
 
-    const box = document.createElement("div");
-    box.className = "box";
+    const box = document.createElement('div')
+    box.className = 'box'
     box.innerHTML = `
       <div class="head">
         <div class="head-title">AI サポートデスク</div>
@@ -633,11 +608,11 @@
         </div>
         <button>送信</button>
       </div>
-    `;
+    `
 
-    const toggleBtn = document.createElement("button");
-    toggleBtn.className = "toggle pulse";
-    toggleBtn.setAttribute("aria-label", "チャットを開く");
+    const toggleBtn = document.createElement('button')
+    toggleBtn.className = 'toggle pulse'
+    toggleBtn.setAttribute('aria-label', 'チャットを開く')
     toggleBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 8V4H8"/>
       <rect width="16" height="12" x="4" y="8" rx="2"/>
@@ -645,141 +620,168 @@
       <path d="M20 14h2"/>
       <path d="M15 13v2"/>
       <path d="M9 13v2"/>
-    </svg>`;
+    </svg>`
 
-    container.appendChild(box);
-    container.appendChild(toggleBtn);
-    shadow.append(style, container);
+    container.appendChild(box)
+    container.appendChild(toggleBtn)
+    shadow.append(style, container)
 
-    const messages = box.querySelector(".messages");
-    const textarea = box.querySelector(".foot textarea");
-    const sendBtn = box.querySelector(".foot button");
-    const headClose = box.querySelector(".head-close");
+    const messages = box.querySelector('.messages')
+    const textarea = box.querySelector('.foot textarea')
+    const sendBtn = box.querySelector('.foot button')
+    const headClose = box.querySelector('.head-close')
 
     // ===== Markdown library loader (marked + DOMPurify) =====
-    const MARKED_URL = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
-    const PURIFY_URL = "https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js";
+    const MARKED_URL = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js'
+    const PURIFY_URL =
+      'https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js'
     function loadScript(src) {
       return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src; s.async = true; s.crossOrigin = 'anonymous';
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error('Failed to load ' + src));
-        document.head.appendChild(s);
-      });
+        const s = document.createElement('script')
+        s.src = src
+        s.async = true
+        s.crossOrigin = 'anonymous'
+        s.onload = () => resolve()
+        s.onerror = () => reject(new Error('Failed to load ' + src))
+        document.head.appendChild(s)
+      })
     }
     // pre-load in background (ignore errors -> fallback renderer will be used)
-    loadScript(MARKED_URL).catch(() => { });
-    loadScript(PURIFY_URL).catch(() => { });
+    loadScript(MARKED_URL).catch(() => {})
+    loadScript(PURIFY_URL).catch(() => {})
 
     function escapeHtml(s) {
-      return (s || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\"/g, "&quot;")
-        .replace(/'/g, "&#39;");
+      return (s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;')
     }
 
     function preprocessMarkdown(text) {
-      let s = String(text || "");
+      let s = String(text || '')
       // unwrap full fenced block like ```markdown ... ``` or ```md ... ```
-      s = s.trim().replace(/^```\s*(?:markdown|md)\s*\n([\s\S]*?)\n```\s*$/i, "$1");
+      s = s
+        .trim()
+        .replace(/^```\s*(?:markdown|md)\s*\n([\s\S]*?)\n```\s*$/i, '$1')
       // drop leading label line 'markdown' or 'md'
-      s = s.replace(/^(?:markdown|md)\s*\n/i, "");
-      return s;
+      s = s.replace(/^(?:markdown|md)\s*\n/i, '')
+      return s
     }
 
     // Fallback simple renderer (used until libraries are available or if blocked by CSP)
     function simpleRenderMarkdown(md) {
-      let s = preprocessMarkdown(md);
-      s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      s = s.replace(/```\s*([a-z0-9+-]*)\n([\s\S]*?)```/gi, function (_, lang, code) {
-        const langLabel = lang ? `<div style=\"font-size:12px;color:#9ca3af;margin-bottom:4px\">${lang}</div>` : "";
-        return `${langLabel}<pre><code>${code.replace(/\n$/, '')}</code></pre>`;
-      });
-      s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
-      s = s.replace(/^\s*[-*_]{3,}\s*$/gm, '<hr/>');
-      s = s.replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>');
-      s = s.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
+      let s = preprocessMarkdown(md)
+      s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      s = s.replace(
+        /```\s*([a-z0-9+-]*)\n([\s\S]*?)```/gi,
+        function (_, lang, code) {
+          const langLabel = lang
+            ? `<div style=\"font-size:12px;color:#9ca3af;margin-bottom:4px\">${lang}</div>`
+            : ''
+          return `${langLabel}<pre><code>${code.replace(/\n$/, '')}</code></pre>`
+        }
+      )
+      s = s.replace(/`([^`]+?)`/g, '<code>$1</code>')
+      s = s.replace(/^\s*[-*_]{3,}\s*$/gm, '<hr/>')
+      s = s.replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>')
+      s = s
+        .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
         .replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
-        .replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
-      s = s.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+        .replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
+      s = s.replace(
+        /\[([^\]]+)\]\((https?:[^\s)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+      )
+      s = s
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
       if (/^\s*[-*]\s+/m.test(s)) {
-        s = s.replace(/^(?:[-*])\s+(.+)$/gm, '<li>$1</li>');
+        s = s.replace(/^(?:[-*])\s+(.+)$/gm, '<li>$1</li>')
         s = s.replace(/(<li>[^<]*<\/li>\n?)+/g, function (block) {
-          const items = block.trim().replace(/\n/g, '');
-          return '<ul>' + items + '</ul>';
-        });
+          const items = block.trim().replace(/\n/g, '')
+          return '<ul>' + items + '</ul>'
+        })
       }
       if (/^\s*\d+\.\s+/m.test(s)) {
-        s = s.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+        s = s.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
         s = s.replace(/(<li>[^<]*<\/li>\n?)+/g, function (block) {
-          const items = block.trim().replace(/\n/g, '');
-          return '<ol>' + items + '</ol>';
-        });
+          const items = block.trim().replace(/\n/g, '')
+          return '<ol>' + items + '</ol>'
+        })
       }
-      s = s.split(/\n{2,}/).map(p => {
-        if (/^\s*<(h\d|ul|ol|pre|blockquote|hr|table|div)/.test(p)) return p;
-        return '<p>' + p.replace(/\n/g, '<br/>') + '</p>';
-      }).join('\n');
-      return s;
+      s = s
+        .split(/\n{2,}/)
+        .map(p => {
+          if (/^\s*<(h\d|ul|ol|pre|blockquote|hr|table|div)/.test(p)) return p
+          return '<p>' + p.replace(/\n/g, '<br/>') + '</p>'
+        })
+        .join('\n')
+      return s
     }
 
     function renderMarkdown(md) {
-      const s = preprocessMarkdown(md);
+      const s = preprocessMarkdown(md)
       try {
         if (window.marked) {
-          const html = window.marked.parse(s);
-          if (window.DOMPurify) return window.DOMPurify.sanitize(html);
-          return html;
+          const html = window.marked.parse(s)
+          if (window.DOMPurify) return window.DOMPurify.sanitize(html)
+          return html
         }
-      } catch { }
-      return simpleRenderMarkdown(s);
+      } catch {}
+      return simpleRenderMarkdown(s)
     }
 
     function appendMessage(role, html) {
-      const wrap = document.createElement('div');
-      wrap.className = 'msg ' + (role === 'user' ? 'user' : 'ai');
-      const b = document.createElement('div');
-      b.className = 'bubble';
+      const wrap = document.createElement('div')
+      wrap.className = 'msg ' + (role === 'user' ? 'user' : 'ai')
+      const b = document.createElement('div')
+      b.className = 'bubble'
       // For user messages, preserve line breaks
       if (role === 'user') {
-        b.innerHTML = html.replace(/\n/g, '<br>');
+        b.innerHTML = html.replace(/\n/g, '<br>')
       } else {
-        b.innerHTML = html;
+        b.innerHTML = html
       }
-      wrap.appendChild(b);
-      messages.appendChild(wrap);
-      messages.scrollTop = messages.scrollHeight;
-      return b;
+      wrap.appendChild(b)
+      messages.appendChild(wrap)
+      messages.scrollTop = messages.scrollHeight
+      return b
     }
 
     function appendErrorMessage(errorType, title, details, showRetry = false) {
-      const errorDiv = document.createElement('div');
-      errorDiv.className = errorType === 'warning' ? 'warning-message' : 'error-message';
+      const errorDiv = document.createElement('div')
+      errorDiv.className =
+        errorType === 'warning' ? 'warning-message' : 'error-message'
 
-      let retryButton = '';
+      let retryButton = ''
       if (showRetry) {
-        retryButton = '<div class="error-retry"><button class="retry-btn" onclick="location.reload()">再読み込み</button></div>';
+        retryButton =
+          '<div class="error-retry"><button class="retry-btn" onclick="location.reload()">再読み込み</button></div>'
       }
 
       errorDiv.innerHTML = `
         <div class="${errorType === 'warning' ? 'warning-title' : 'error-title'}">${escapeHtml(title)}</div>
         <div class="${errorType === 'warning' ? 'warning-details' : 'error-details'}">${escapeHtml(details)}</div>
         ${retryButton}
-      `;
+      `
 
-      messages.appendChild(errorDiv);
-      messages.scrollTop = messages.scrollHeight;
-      return errorDiv;
+      messages.appendChild(errorDiv)
+      messages.scrollTop = messages.scrollHeight
+      return errorDiv
     }
 
     function showTyping() {
-      const el = appendMessage('ai', '<span class="typing">回答を生成しています</span>');
-      return { remove() { el.parentElement && el.parentElement.remove(); } };
+      const el = appendMessage(
+        'ai',
+        '<span class="typing">回答を生成しています</span>'
+      )
+      return {
+        remove() {
+          el.parentElement && el.parentElement.remove()
+        },
+      }
     }
 
     function getErrorMessage(status, responseText) {
@@ -788,30 +790,32 @@
           return {
             type: 'error',
             title: '認証エラー',
-            details: '埋め込みキーが無効です。サイト管理者にお問い合わせください。',
-            showRetry: false
-          };
+            details:
+              '埋め込みキーが無効です。サイト管理者にお問い合わせください。',
+            showRetry: false,
+          }
         case 429:
           return {
             type: 'warning',
             title: 'アクセス制限',
-            details: 'リクエストが集中しています。しばらく時間をおいてから再度お試しください。',
-            showRetry: true
-          };
+            details:
+              'リクエストが集中しています。しばらく時間をおいてから再度お試しください。',
+            showRetry: true,
+          }
         case 402:
           return {
             type: 'warning',
             title: '利用上限到達',
             details: '本日の利用上限に達しました。明日再度ご利用ください。',
-            showRetry: false
-          };
+            showRetry: false,
+          }
         case 403:
           return {
             type: 'error',
             title: 'アクセス拒否',
             details: 'このサイトからのアクセスは許可されていません。',
-            showRetry: false
-          };
+            showRetry: false,
+          }
         case 500:
         case 502:
         case 503:
@@ -819,212 +823,240 @@
           return {
             type: 'error',
             title: 'サーバーエラー',
-            details: 'サーバーで問題が発生しています。しばらく時間をおいてから再度お試しください。',
-            showRetry: true
-          };
+            details:
+              'サーバーで問題が発生しています。しばらく時間をおいてから再度お試しください。',
+            showRetry: true,
+          }
         default:
           // Try to parse error message from response
-          let errorMsg = 'エラーが発生しました。もう一度お試しください。';
+          let errorMsg = 'エラーが発生しました。もう一度お試しください。'
           try {
-            const errorData = JSON.parse(responseText);
+            const errorData = JSON.parse(responseText)
             if (errorData.detail) {
-              errorMsg = errorData.detail;
+              errorMsg = errorData.detail
             } else if (errorData.message) {
-              errorMsg = errorData.message;
+              errorMsg = errorData.message
             }
-          } catch { }
+          } catch {}
 
           return {
             type: 'error',
             title: 'エラー',
             details: errorMsg,
-            showRetry: true
-          };
+            showRetry: true,
+          }
       }
     }
 
-    function renderCitations(list) {
-      if (!list || !list.length) return '';
-      const items = list.map((c) => {
-        const label = escapeHtml(c.content || '引用');
-        const src = c.metadata && (c.metadata.source || c.metadata.filename || c.metadata.url);
-        const page = c.metadata && c.metadata.page;
-        const parts = [label, src ? '(' + escapeHtml(String(src)) + ')' : null, page != null ? 'p.' + escapeHtml(String(page)) : null].filter(Boolean);
-        return '<li>' + parts.join(' ') + '</li>';
-      }).join('');
-      return '<div class="cites"><strong>参考資料</strong><ul>' + items + '</ul></div>';
-    }
-
-    const key = host.getAttribute(ATTR_KEY) || "";
-    const apiBase = host.getAttribute("data-api-base") || window.location.origin;
+    const key = host.getAttribute(ATTR_KEY) || ''
+    const apiBase = host.getAttribute('data-api-base') || window.location.origin
     // AbortController（現在のリクエストのキャンセル制御）
-    let currentController = null;
+    let currentController = null
     // タイムアウト（初回バイト/ハートビート）
-    const FIRST_BYTE_TIMEOUT_MS = 20000;
-    const HEARTBEAT_TIMEOUT_MS = 20000;
+    const FIRST_BYTE_TIMEOUT_MS = 20000
+    const HEARTBEAT_TIMEOUT_MS = 20000
 
     async function ask(q) {
-      appendMessage('user', escapeHtml(q));
-      let typing = showTyping();
-      sendBtn.disabled = true; textarea.disabled = true;
+      appendMessage('user', escapeHtml(q))
+      let typing = showTyping()
+      sendBtn.disabled = true
+      textarea.disabled = true
       // 既存のストリームがあれば中断
       if (currentController) {
-        try { currentController.abort(); } catch { }
+        try {
+          currentController.abort()
+        } catch {}
       }
-      let controller = new AbortController();
-      currentController = controller;
-      const { signal } = controller;
+      let controller = new AbortController()
+      currentController = controller
+      const { signal } = controller
 
       // タイムアウト管理（tryの外で宣言し、catch/finallyからも触れるように）
-      let timedOut = false;
-      let gotFirstByte = false;
-      let toFirstByteTimer = null;
-      let heartbeatTimer = null;
+      let timedOut = false
+      let gotFirstByte = false
+      let toFirstByteTimer = null
+      let heartbeatTimer = null
       const clearTimers = () => {
-        if (toFirstByteTimer) { clearTimeout(toFirstByteTimer); toFirstByteTimer = null; }
-        if (heartbeatTimer) { clearTimeout(heartbeatTimer); heartbeatTimer = null; }
-      };
+        if (toFirstByteTimer) {
+          clearTimeout(toFirstByteTimer)
+          toFirstByteTimer = null
+        }
+        if (heartbeatTimer) {
+          clearTimeout(heartbeatTimer)
+          heartbeatTimer = null
+        }
+      }
       const bumpHeartbeat = () => {
-        if (!gotFirstByte) return;
-        if (heartbeatTimer) clearTimeout(heartbeatTimer);
+        if (!gotFirstByte) return
+        if (heartbeatTimer) clearTimeout(heartbeatTimer)
         heartbeatTimer = setTimeout(() => {
-          timedOut = true;
-          try { controller.abort(); } catch { }
-        }, HEARTBEAT_TIMEOUT_MS);
-      };
+          timedOut = true
+          try {
+            controller.abort()
+          } catch {}
+        }, HEARTBEAT_TIMEOUT_MS)
+      }
       toFirstByteTimer = setTimeout(() => {
-        timedOut = true;
-        try { controller.abort(); } catch { }
-      }, FIRST_BYTE_TIMEOUT_MS);
+        timedOut = true
+        try {
+          controller.abort()
+        } catch {}
+      }, FIRST_BYTE_TIMEOUT_MS)
 
       try {
         const res = await fetch(`${apiBase}/api/v1/embed/docs/ask`, {
-          method: "POST",
+          method: 'POST',
           headers: {
-            "Content-Type": "application/json",
-            Accept: "text/event-stream",
-            "x-embed-key": key,
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+            'x-embed-key': key,
           },
           body: JSON.stringify({ question: q, top_k: 3 }),
           signal,
-        });
+        })
 
-        if (res.ok && res.headers.get("content-type")?.includes("text/event-stream")) {
-          typing.remove();
-          let aiText = "";
-          const aiBubble = appendMessage('ai', "");
-          const reader = res.body.getReader();
-          const dec = new TextDecoder();
-          let buf = "";
+        if (
+          res.ok &&
+          res.headers.get('content-type')?.includes('text/event-stream')
+        ) {
+          typing.remove()
+          let aiText = ''
+          const aiBubble = appendMessage('ai', '')
+          const reader = res.body.getReader()
+          const dec = new TextDecoder()
+          let buf = ''
           while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
+            const { value, done } = await reader.read()
+            if (done) break
             if (!gotFirstByte) {
-              gotFirstByte = true;
-              if (toFirstByteTimer) { clearTimeout(toFirstByteTimer); toFirstByteTimer = null; }
+              gotFirstByte = true
+              if (toFirstByteTimer) {
+                clearTimeout(toFirstByteTimer)
+                toFirstByteTimer = null
+              }
             }
-            bumpHeartbeat();
-            buf += dec.decode(value, { stream: true });
-            const parts = buf.split("\n\n");
-            buf = parts.pop();
+            bumpHeartbeat()
+            buf += dec.decode(value, { stream: true })
+            const parts = buf.split('\n\n')
+            buf = parts.pop()
             for (const rec of parts) {
-              let eventName = null;
-              const dataLines = [];
-              for (const line of rec.split("\n")) {
-                if (line.startsWith("event:")) eventName = line.slice(6).trim();
-                else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+              let eventName = null
+              const dataLines = []
+              for (const line of rec.split('\n')) {
+                if (line.startsWith('event:')) eventName = line.slice(6).trim()
+                else if (line.startsWith('data:'))
+                  dataLines.push(line.slice(5).trimStart())
                 // ":" で始まるSSEコメント（ハートビート）は無視
               }
-              const dataStr = dataLines.join("\n");
+              const dataStr = dataLines.join('\n')
               if (eventName === 'citations') {
-                try {
-                  const payload = JSON.parse(dataStr);
-                  const citesHtml = renderCitations(payload && payload.citations);
-                  if (citesHtml) aiBubble.innerHTML = aiBubble.innerHTML + citesHtml;
-                } catch { }
+                // citations情報は無視（参考文書を表示しない）
               } else {
-                aiText += (dataStr ? dataStr + "\n" : "");
-                aiBubble.innerHTML = renderMarkdown(aiText);
+                aiText += dataStr ? dataStr + '\n' : ''
+                aiBubble.innerHTML = renderMarkdown(aiText)
               }
             }
           }
-          clearTimers();
+          clearTimers()
         } else if (!res.ok) {
-          typing.remove();
-          const responseText = await res.text().catch(() => '');
-          const errorInfo = getErrorMessage(res.status, responseText);
-          appendErrorMessage(errorInfo.type, errorInfo.title, errorInfo.details, errorInfo.showRetry);
+          typing.remove()
+          const responseText = await res.text().catch(() => '')
+          const errorInfo = getErrorMessage(res.status, responseText)
+          appendErrorMessage(
+            errorInfo.type,
+            errorInfo.title,
+            errorInfo.details,
+            errorInfo.showRetry
+          )
         } else {
-          typing.remove();
-          const json = await res.json().catch(() => ({}));
-          const answer = json && json.answer ? String(json.answer) : "";
-          const cites = json && json.citations ? json.citations : [];
-          const html = renderMarkdown(answer) + renderCitations(cites);
-          appendMessage('ai', html);
+          typing.remove()
+          const json = await res.json().catch(() => ({}))
+          const answer = json && json.answer ? String(json.answer) : ''
+          const html = renderMarkdown(answer)
+          appendMessage('ai', html)
         }
       } catch (e) {
-        typing.remove();
+        typing.remove()
         // Network errors or CORS issues
         if (e.name === 'AbortError') {
           // ユーザーキャンセル／タイムアウト
           if (typeof timedOut === 'boolean' && timedOut) {
-            appendErrorMessage('warning', 'タイムアウト', '一定時間応答がなく接続を中断しました。もう一度お試しください。', false);
+            appendErrorMessage(
+              'warning',
+              'タイムアウト',
+              '一定時間応答がなく接続を中断しました。もう一度お試しください。',
+              false
+            )
           }
         } else if (e.name === 'TypeError' && e.message.includes('fetch')) {
-          appendErrorMessage('error', 'ネットワークエラー', 'サーバーに接続できません。ネットワーク接続またはCORS設定を確認してください。', true);
+          appendErrorMessage(
+            'error',
+            'ネットワークエラー',
+            'サーバーに接続できません。ネットワーク接続またはCORS設定を確認してください。',
+            true
+          )
         } else {
-          appendErrorMessage('error', '予期しないエラー', 'エラーが発生しました。もう一度お試しください。', true);
+          appendErrorMessage(
+            'error',
+            '予期しないエラー',
+            'エラーが発生しました。もう一度お試しください。',
+            true
+          )
         }
       } finally {
         // タイマー後始末
-        clearTimers();
+        clearTimers()
         // UI reset only if this call is the latest
         if (currentController === controller) {
-          currentController = null;
-          sendBtn.disabled = false; textarea.disabled = false; textarea.focus();
+          currentController = null
+          sendBtn.disabled = false
+          textarea.disabled = false
+          textarea.focus()
         }
       }
     }
 
     // Remove auto-resize functionality since we want fixed height
 
-    sendBtn.addEventListener("click", () => {
-      const q = (textarea.value || "").trim();
-      if (!q) return;
-      textarea.value = "";
-      ask(q);
-    });
+    sendBtn.addEventListener('click', () => {
+      const q = (textarea.value || '').trim()
+      if (!q) return
+      textarea.value = ''
+      ask(q)
+    })
 
-    textarea.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        sendBtn.click();
+    textarea.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        e.stopPropagation()
+        sendBtn.click()
       }
-    });
+    })
 
     // Pointer cursor when hovering over the scrollbar area (heuristic)
     // Compute if mouse is within 12px from the right edge of the textarea's content box
     function updateScrollbarCursor(e) {
-      const rect = textarea.getBoundingClientRect();
-      const dx = rect.right - e.clientX;
-      const nearScrollbar = dx >= 0 && dx <= 12; // heuristic width including overlay scrollbars
+      const rect = textarea.getBoundingClientRect()
+      const dx = rect.right - e.clientX
+      const nearScrollbar = dx >= 0 && dx <= 12 // heuristic width including overlay scrollbars
       // Only when overflow-y is scrollable and content exceeds height
-      const scrollable = textarea.scrollHeight > textarea.clientHeight;
-      textarea.style.cursor = (nearScrollbar && scrollable) ? 'pointer' : 'text';
+      const scrollable = textarea.scrollHeight > textarea.clientHeight
+      textarea.style.cursor = nearScrollbar && scrollable ? 'pointer' : 'text'
     }
-    textarea.addEventListener('mousemove', updateScrollbarCursor);
-    textarea.addEventListener('mouseleave', () => { textarea.style.cursor = 'text'; });
+    textarea.addEventListener('mousemove', updateScrollbarCursor)
+    textarea.addEventListener('mouseleave', () => {
+      textarea.style.cursor = 'text'
+    })
 
     // toggle open/close
-    let open = false;
+    let open = false
     function setOpen(v) {
-      open = !!v;
+      open = !!v
       if (open) {
-        box.classList.add('opening');
-        toggleBtn.classList.remove('pulse');
+        box.classList.add('opening')
+        toggleBtn.classList.remove('pulse')
       }
-      box.style.display = open ? 'flex' : 'none';
+      box.style.display = open ? 'flex' : 'none'
 
       const botIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 8V4H8"/>
@@ -1033,32 +1065,38 @@
         <path d="M20 14h2"/>
         <path d="M15 13v2"/>
         <path d="M9 13v2"/>
-      </svg>`;
+      </svg>`
 
-      toggleBtn.style.display = open ? 'none' : 'flex';
-      toggleBtn.innerHTML = open ? '✕' : botIcon;
-      toggleBtn.setAttribute('aria-label', open ? 'チャットを閉じる' : 'チャットを開く');
+      toggleBtn.style.display = open ? 'none' : 'flex'
+      toggleBtn.innerHTML = open ? '✕' : botIcon
+      toggleBtn.setAttribute(
+        'aria-label',
+        open ? 'チャットを閉じる' : 'チャットを開く'
+      )
 
       if (open) {
         setTimeout(() => {
-          textarea.focus();
-        }, 300);
+          textarea.focus()
+        }, 300)
       }
     }
 
-    toggleBtn.addEventListener('click', () => setOpen(true));
-    headClose.addEventListener('click', () => setOpen(false));
-    setOpen(false);
+    toggleBtn.addEventListener('click', () => setOpen(true))
+    headClose.addEventListener('click', () => setOpen(false))
+    setOpen(false)
   }
 
-  window.addEventListener("DOMContentLoaded", () => {
-    const script = document.querySelector("script[data-embed-key]");
-    if (!script) return;
-    const host = document.createElement("div");
-    host.setAttribute("data-embed-key", script.getAttribute("data-embed-key") || "");
-    const apiBase = script.getAttribute("data-api-base");
-    if (apiBase) host.setAttribute("data-api-base", apiBase);
-    script.insertAdjacentElement("afterend", host);
-    createWidget(host);
-  });
-})();
+  window.addEventListener('DOMContentLoaded', () => {
+    const script = document.querySelector('script[data-embed-key]')
+    if (!script) return
+    const host = document.createElement('div')
+    host.setAttribute(
+      'data-embed-key',
+      script.getAttribute('data-embed-key') || ''
+    )
+    const apiBase = script.getAttribute('data-api-base')
+    if (apiBase) host.setAttribute('data-api-base', apiBase)
+    script.insertAdjacentElement('afterend', host)
+    createWidget(host)
+  })
+})()
