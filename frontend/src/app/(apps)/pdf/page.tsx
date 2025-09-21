@@ -74,6 +74,7 @@ export default function ChatPage() {
   const [tenants, setTenants] = useState<TenantInfo[]>([])
   const [selectedTenant, setSelectedTenant] = useState('')
   const [selectedKey, setSelectedKey] = useState('')
+  const [isInitialized, setIsInitialized] = useState(false)
   const setTopK = useSettingsStore(s => s.setTopK)
 
   // テナントの初期ロード
@@ -86,19 +87,29 @@ export default function ChatPage() {
         const data = await res.json()
         const list = (data?.tenants || []) as TenantInfo[]
         setTenants(list)
-        const saveKey =
-          typeof window !== 'undefined' ? localStorage.getItem('embed:key') : ''
-        const initial = list.find(t => t.key === saveKey) || list[0]
-        if (initial) {
-          setSelectedTenant(initial.name)
-          setSelectedKey(initial.key)
-          try {
-            localStorage.setItem('embed:key', initial.key)
-          } catch {}
-        }
-      } catch {}
+      } catch {
+        console.error('Failed to load tenants')
+      }
     })()
   }, [])
+
+  // tenantsが読み込まれた時のテナントとキーの選択
+  useEffect(() => {
+    if (tenants.length === 0) return
+
+    const saveKey =
+      typeof window !== 'undefined' ? localStorage.getItem('embed:key') : ''
+    const initial = tenants.find(t => t.key === saveKey) || tenants[0]
+
+    if (initial) {
+      setSelectedTenant(initial.name)
+      setSelectedKey(initial.key)
+      try {
+        localStorage.setItem('embed:key', initial.key)
+      } catch {}
+    }
+    setIsInitialized(true)
+  }, [tenants])
 
   // 選択されたキーを常に localStorage と同期
   useEffect(() => {
@@ -331,14 +342,15 @@ export default function ChatPage() {
           className="flex gap-2 p-4 max-w-5xl mx-auto"
           onSubmit={handleSubmit}
         >
-          {/* <div className="flex items-center justify-between gap-1">
-            <Search className="h-4 w-4" />
-            <Switch checked={isBot} onCheckedChange={setIsBot} />
-            <Bot className="h-4 w-4" />
-          </div> */}
-          <Select value={selectedTenant} onValueChange={onChangeTenant}>
+          <Select
+            value={isInitialized ? selectedTenant : ''}
+            onValueChange={onChangeTenant}
+            disabled={!isInitialized}
+          >
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="テナント" />
+              <SelectValue
+                placeholder={isInitialized ? 'テナント' : '読み込み中...'}
+              />
             </SelectTrigger>
             <SelectContent>
               {tenants.map(t => (
