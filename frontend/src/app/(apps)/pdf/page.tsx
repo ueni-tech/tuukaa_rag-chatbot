@@ -216,7 +216,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="flex flex-col flex-1 h-[calc(100vh-57px)]">
       {/* Chat Message */}
       <ScrollArea className="flex-1 min-h-0 p-4">
         <div className="space-y-4 max-w-5xl mx-auto">
