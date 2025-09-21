@@ -304,14 +304,34 @@ class RAGEngine:
             raise RuntimeError("RAGエンジンが初期化されていません")
 
         try:
-            documents = await self.search_documents(question, top_k, tenant=tenant)
+            # まず、テナントにドキュメントが存在するかチェック
+            doc_list = await self.get_document_list(tenant=tenant)
+            if doc_list["total_chunks"] == 0:
+                return {
+                    "answer": (
+                        "まずはドキュメントをアップロードしてください。"
+                        "質問にお答えするためには、関連する資料を"
+                        "アップロードしていただく必要があります。"
+                    ),
+                    "documents": [],
+                    "context_used": "",
+                    "llm_model": getattr(
+                        self.llm, "model", settings.default_model
+                    ),
+                }
+
+            documents = await self.search_documents(
+                question, top_k, tenant=tenant
+            )
 
             if not documents:
                 return {
                     "answer": "関連する文書が見つかりませんでした。",
                     "documents": [],
                     "context_used": "",
-                    "llm_model": getattr(self.llm, "model", settings.default_model),
+                    "llm_model": getattr(
+                        self.llm, "model", settings.default_model
+                    ),
                 }
 
             context = self._format_documents(documents)
@@ -321,7 +341,9 @@ class RAGEngine:
             else:
                 llm = self.llm
                 used_model = getattr(
-                    llm, "model", getattr(llm, "model_name", settings.default_model)
+                    llm,
+                    "model",
+                    getattr(llm, "model_name", settings.default_model),
                 )
 
             prompt = PromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
