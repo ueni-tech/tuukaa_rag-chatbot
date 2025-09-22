@@ -1,3 +1,4 @@
+import os
 import types
 from contextlib import asynccontextmanager
 from typing import Any
@@ -8,6 +9,10 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.core.web.dependencies import get_rag_engine
 from app.core.config import settings
+
+# テスト時は先に最低限の環境変数を設定
+os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("EMBED_ALLOWED_ORIGINS", "http://localhost")
 
 
 class FakeDocument:
@@ -39,7 +44,8 @@ class FakeRAGEngine:
     ) -> list[FakeDocument]:
         # クエリ文字列を元に簡単なドキュメントを返す
         return [
-            FakeDocument(page_content=f"doc for {query}", metadata={"tenant": tenant})
+            FakeDocument(page_content=f"doc for {query}", metadata={
+                         "tenant": tenant})
         ]
 
     async def generate_answer(
