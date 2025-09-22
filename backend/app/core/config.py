@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     # USD→JPY 為替レート（MODEL_PRICING を USD/token として受け取る想定）
     usd_jpy_rate: float = 148.117
 
+    # === 入力側のトークン予算（プロンプトと質問・コンテキストの合計に関する上限） ===
+    # モデルのコンテキストウィンドウ（既定値）。必要に応じて .env で上書き。
+    default_context_window_tokens: int = 8192
+    # システム/指示/テンプレート固定分として見込むオーバーヘッド
+    prompt_overhead_tokens: int = 512
+
     class ConfigDict:
         env_file = ".env"
         env_file_encoding = "utf-8"

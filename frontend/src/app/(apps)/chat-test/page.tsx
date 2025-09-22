@@ -18,6 +18,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { useSettingsStore } from '@/lib/settings-store'
+import { Input } from '@/components/ui/input'
 import dynamic from 'next/dynamic'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -69,11 +70,19 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isBot] = useState(true)
   const topK = useSettingsStore(s => s.topK)
+  // 各メッセージ要素への参照を保持
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const [scrollToId, setScrollToId] = useState<string | null>(null)
   const [tenants, setTenants] = useState<TenantInfo[]>([])
   const [selectedTenant, setSelectedTenant] = useState('')
   const [selectedKey, setSelectedKey] = useState('')
   const [isInitialized, setIsInitialized] = useState(false)
   const setTopK = useSettingsStore(s => s.setTopK)
+  const DEFAULT_MAX_TOKENS = 768
+  const [maxTokens, setMaxTokens] = useState<number>(DEFAULT_MAX_TOKENS)
+  const [maxTokensInput, setMaxTokensInput] = useState<string>(
+    String(DEFAULT_MAX_TOKENS)
+  )
 
   // テナントの初期ロード
   useEffect(() => {
@@ -165,6 +174,8 @@ export default function ChatPage() {
     }
 
     setMessages(prev => [...prev, userMessage])
+    // 直後にそのメッセージへスクロールするためIDを記録
+    setScrollToId(userMessage.id)
     setInput('')
     setIsLoading(true)
 
@@ -186,6 +197,7 @@ export default function ChatPage() {
           question: userMessage.content,
           top_k: topK,
           model: model || undefined,
+          max_output_tokens: maxTokens,
         }),
       })
 
@@ -219,6 +231,16 @@ export default function ChatPage() {
       setIsLoading(false)
     }
   }
+
+  // メッセージが更新されたら指定IDの要素へスクロール
+  useEffect(() => {
+    if (!scrollToId) return
+    const el = messageRefs.current[scrollToId]
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    setScrollToId(null)
+  }, [messages, scrollToId])
 
   const onChangeTenant = (name: string) => {
     setSelectedTenant(name)
@@ -255,6 +277,9 @@ export default function ChatPage() {
             <div
               key={message.id}
               className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              ref={el => {
+                messageRefs.current[message.id] = el
+              }}
             >
               <div
                 className={`flex gap-3 max-w-[80%] ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
@@ -343,10 +368,10 @@ export default function ChatPage() {
       {/* Input Form */}
       <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <form
-          className="flex items-start gap-4 px-2 py-6 max-w-5xl mx-auto"
+          className="flex flex-col gap-4 px-2 py-6 max-w-5xl mx-auto"
           onSubmit={handleSubmit}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex w-full justify-between items-center gap-2">
             <Select
               value={isInitialized ? selectedTenant : ''}
               onValueChange={onChangeTenant}
@@ -365,7 +390,7 @@ export default function ChatPage() {
                 ))}
               </SelectContent>
             </Select>
-            <div className="flex items-center gap-2 w-[150px]">
+            <div className="flex items-center gap-2 w-[200px]">
               <Label className="whitespace-nowrap">top_k: {topK}</Label>
               <Slider
                 min={1}
@@ -373,6 +398,55 @@ export default function ChatPage() {
                 step={1}
                 value={[topK]}
                 onValueChange={v => setTopK(v[0] ?? 3)}
+              />
+            </div>
+            <div className="flex items-center gap-2 w-[360px]">
+              <Label className="whitespace-nowrap">max_tokens</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={4096}
+                step={1}
+                className="w-28"
+                value={maxTokensInput}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const raw = e.target.value
+                  setMaxTokensInput(raw)
+                  if (raw === '') return
+                  const v = parseInt(raw, 10)
+                  if (!Number.isNaN(v)) {
+                    const clamped = Math.max(1, Math.min(4096, v))
+                    setMaxTokens(clamped)
+                  }
+                }}
+                onBlur={() => {
+                  if (maxTokensInput.trim() === '') {
+                    setMaxTokens(DEFAULT_MAX_TOKENS)
+                    setMaxTokensInput(String(DEFAULT_MAX_TOKENS))
+                  } else {
+                    const v = parseInt(maxTokensInput, 10)
+                    if (Number.isNaN(v)) {
+                      setMaxTokens(DEFAULT_MAX_TOKENS)
+                      setMaxTokensInput(String(DEFAULT_MAX_TOKENS))
+                    } else {
+                      const clamped = Math.max(1, Math.min(4096, v))
+                      setMaxTokens(clamped)
+                      setMaxTokensInput(String(clamped))
+                    }
+                  }
+                }}
+              />
+              <Slider
+                min={1}
+                max={4096}
+                step={64}
+                value={[maxTokens]}
+                onValueChange={v => {
+                  const val = v[0] ?? DEFAULT_MAX_TOKENS
+                  setMaxTokens(val)
+                  setMaxTokensInput(String(val))
+                }}
               />
             </div>
             {/* LLM */}
@@ -399,24 +473,26 @@ export default function ChatPage() {
               </Select>
             </div>
           </div>
-          <Textarea
-            value={input}
-            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-              setInput(e.target.value)
-            }
-            placeholder={`Ask a question about tenant\'s documents...\nShift+Enterで改行`}
-            className="flex-1 min-h-[72px] resize-none"
-            disabled={isLoading}
-            onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSubmit(e as any)
+          <div className="flex w-full justify-between items-end gap-2">
+            <Textarea
+              value={input}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                setInput(e.target.value)
               }
-            }}
-          />
-          <Button type="submit" size="icon" disabled={isLoading}>
-            <Send className="h-4 w-4" />
-          </Button>
+              placeholder={`Ask a question about tenant\'s documents...\nShift+Enterで改行`}
+              className="flex-1 resize-none"
+              disabled={isLoading}
+              onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSubmit(e as any)
+                }
+              }}
+            />
+            <Button type="submit" size="icon" disabled={isLoading}>
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
         </form>
       </div>
     </div>

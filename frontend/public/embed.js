@@ -911,7 +911,7 @@
             Accept: 'text/event-stream',
             'x-embed-key': key,
           },
-          body: JSON.stringify({ question: q, top_k: 3 }),
+          body: JSON.stringify({ question: q, top_k: 2 }),
           signal,
         })
 

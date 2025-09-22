@@ -4,7 +4,7 @@ BASE = "/api/v1/embed/docs"
 
 
 def _headers():
-    return {"x_embed_key": "demo123"}
+    return {"x-embed-key": "demo123"}
 
 
 def test_upload_txt(client: TestClient):

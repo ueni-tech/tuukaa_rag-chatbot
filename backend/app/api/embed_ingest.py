@@ -347,6 +347,7 @@ async def docs_ask(
         model=question_req.model,
         temperature=question_req.temperature,
         tenant=tenant,
+        max_output_tokens=question_req.max_output_tokens,
     )
 
     # 参照文書の情報を構築
@@ -358,9 +359,23 @@ async def docs_ask(
     # コスト（日次ブレーカ） 実績: 入力(質問+実際のcontext) と 出力(回答) を分離
     answer_text = result.get("answer", "")
     context_used = result.get("context_used", "")
-    input_tokens = max(
-        1, len((question_req.question + "\n" + context_used)) // 4)
-    output_tokens = max(1, len(answer_text) // 4)
+    # tiktokenで実測（モデルは指定があればそれを使用、なければ既定）
+    try:
+        import tiktoken
+        model_for_encoding = (
+            question_req.model or settings.default_model or "").strip() or "gpt-4o-mini"
+        try:
+            enc = tiktoken.encoding_for_model(model_for_encoding)
+        except Exception:
+            enc = tiktoken.get_encoding("cl100k_base")
+        input_tokens = max(
+            1, len(enc.encode((question_req.question or "") + "\n" + (context_used or ""))))
+        output_tokens = max(1, len(enc.encode(answer_text or "")))
+    except Exception:
+        # フォールバック（概算）
+        input_tokens = max(
+            1, len((question_req.question + "\n" + context_used)) // 4)
+        output_tokens = max(1, len(answer_text) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
     # 事後計上: in/out 単価で合計

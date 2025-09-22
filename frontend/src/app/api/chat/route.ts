@@ -4,7 +4,7 @@ export const maxDuration = 30
 
 export async function POST(req: Request) {
   try {
-    const { question, model, top_k } = await req.json()
+    const { question, model, top_k, max_output_tokens } = await req.json()
 
     // ヘッダーから認証情報を取得
     const embedKey = req.headers.get('x-embed-key')
@@ -31,8 +31,10 @@ export async function POST(req: Request) {
       headers,
       body: JSON.stringify({
         question: question,
-        top_k: typeof top_k === 'number' ? top_k : 3,
+        top_k: typeof top_k === 'number' ? top_k : 2,
         model: model || undefined,
+        max_output_tokens:
+          typeof max_output_tokens === 'number' ? max_output_tokens : undefined,
       }),
     })
 

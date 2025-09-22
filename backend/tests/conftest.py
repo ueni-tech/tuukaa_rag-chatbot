@@ -49,6 +49,7 @@ class FakeRAGEngine:
         model: str | None = None,
         temperature: float | None = None,
         tenant: str | None = None,
+        max_output_tokens: int | None = None,
     ) -> dict[str, Any]:
         return {
             "answer": f"answer to: {question}",

@@ -20,6 +20,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import SecretStr
 
 from ..config import settings
+import tiktoken
 
 
 class RAGEngine:
@@ -72,17 +73,19 @@ class RAGEngine:
         self.llm: ChatOpenAI | None = None
         self.vectorstore: Chroma | None = None
         self._ensure_directories()
-        self._llm_cache: dict[tuple[str, float], ChatOpenAI] = {}
+        self._llm_cache: dict[tuple[str, float, int], ChatOpenAI] = {}
 
     def _get_llm(
-        self, model: str | None, temperature: float | None
+        self, model: str | None, temperature: float | None, max_tokens: int | None = None
     ) -> tuple[ChatOpenAI, str]:
         """(model, temperature)ごとにLLMをキャッシュして取得"""
         used_model = model or settings.default_model
         used_temp = (
             temperature if temperature is not None else settings.default_temperature
         )
-        key = (used_model, used_temp)
+        used_max = int(max_tokens) if max_tokens is not None else int(
+            settings.default_max_output_tokens)
+        key = (used_model, used_temp, used_max)
         if key not in self._llm_cache:
             api_key = (
                 SecretStr(settings.openai_api_key)
@@ -91,7 +94,7 @@ class RAGEngine:
             )
             self._llm_cache[key] = ChatOpenAI(
                 model=used_model, temperature=used_temp, api_key=api_key, timeout=60,
-                max_tokens=settings.default_max_output_tokens,
+                max_tokens=used_max,
             )
         return self._llm_cache[key], used_model
 
@@ -291,6 +294,7 @@ class RAGEngine:
         model: str | None = None,
         temperature: float | None = None,
         tenant: str | None = None,
+        max_output_tokens: int | None = None,
     ) -> dict[str, Any]:
         """RAGによる回答生成
         Args:
@@ -337,13 +341,55 @@ class RAGEngine:
                     ),
                 }
 
-            context = self._format_documents(documents)
-            # 速度最適化: コンテキストを最大約4000文字に制限（≈1000トークン目安）
-            if len(context) > 4000:
-                context = context[:4000]
+            # トークンベース詰め込み（質問・プロンプト・出力上限を考慮した残り枠に収める）
+            model_for_encoding = model or getattr(
+                self.llm, "model", settings.default_model)
+            try:
+                enc = tiktoken.encoding_for_model(model_for_encoding)
+            except Exception:
+                enc = tiktoken.get_encoding("cl100k_base")
 
-            if model is not None or temperature is not None:
-                llm, used_model = self._get_llm(model, temperature)
+            context_window = getattr(
+                settings, "default_context_window_tokens", 8192)
+            prompt_overhead = getattr(settings, "prompt_overhead_tokens", 512)
+
+            question_tokens = len(enc.encode(question or ""))
+            fixed_prompt_tokens = prompt_overhead
+
+            used_max_out = int(max_output_tokens) if max_output_tokens is not None else int(
+                settings.default_max_output_tokens)
+
+            remaining_input_budget = max(
+                0, context_window - fixed_prompt_tokens - question_tokens - used_max_out)
+
+            selected_parts: list[str] = []
+            used_tokens = 0
+            for doc in documents:
+                part = doc.page_content or ""
+                part_tokens = len(enc.encode(part))
+                if used_tokens + part_tokens <= remaining_input_budget:
+                    selected_parts.append(part)
+                    used_tokens += part_tokens
+                else:
+                    remaining = remaining_input_budget - used_tokens
+                    if remaining > 0:
+                        try:
+                            ids = enc.encode(part)
+                            clipped = enc.decode(ids[:remaining])
+                        except Exception:
+                            avg_chars_per_token = 4
+                            clipped = part[: max(
+                                0, remaining * avg_chars_per_token)]
+                        if clipped:
+                            selected_parts.append(clipped)
+                            used_tokens = remaining_input_budget
+                    break
+
+            context = "\n\n".join(selected_parts)
+
+            if model is not None or temperature is not None or max_output_tokens is not None:
+                llm, used_model = self._get_llm(
+                    model, temperature, max_output_tokens)
             else:
                 llm = self.llm
                 used_model = getattr(
