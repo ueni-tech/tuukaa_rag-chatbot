@@ -362,30 +362,11 @@ class RAGEngine:
             remaining_input_budget = max(
                 0, context_window - fixed_prompt_tokens - question_tokens - used_max_out)
 
-            selected_parts: list[str] = []
-            used_tokens = 0
-            for doc in documents:
-                part = doc.page_content or ""
-                part_tokens = len(enc.encode(part))
-                if used_tokens + part_tokens <= remaining_input_budget:
-                    selected_parts.append(part)
-                    used_tokens += part_tokens
-                else:
-                    remaining = remaining_input_budget - used_tokens
-                    if remaining > 0:
-                        try:
-                            ids = enc.encode(part)
-                            clipped = enc.decode(ids[:remaining])
-                        except Exception:
-                            avg_chars_per_token = 4
-                            clipped = part[: max(
-                                0, remaining * avg_chars_per_token)]
-                        if clipped:
-                            selected_parts.append(clipped)
-                            used_tokens = remaining_input_budget
-                    break
+            selected_parts = self._select_context_parts(
+                documents, enc, remaining_input_budget
+            )
 
-            context = "\n\n".join(selected_parts)
+            context = self._format_documents(selected_parts)
 
             if model is not None or temperature is not None or max_output_tokens is not None:
                 llm, used_model = self._get_llm(
@@ -431,15 +412,56 @@ class RAGEngine:
         except Exception as e:
             raise RuntimeError(f"回答生成に失敗しました: {str(e)}")
 
-    def _format_documents(self, documets: list[Document]) -> str:
-        """文書をフォーマットしてコンテキストとして使用
+    def _select_context_parts(
+        self,
+        documents: list[Document],
+        enc: Any,
+        remaining_input_budget: int,
+    ) -> list[str]:
+        """トークン予算内に収まるように文書内容を選択・クリップ
+
         Args:
-            documents: 文書のリスト
+            documents: 検索で得た文書のリスト
+            enc: トークナイザ（tiktoken エンコーダ）
+            remaining_input_budget: コンテキストとして投入可能なトークン数の上限
+
+        Returns:
+            コンテキストに使用するテキスト片のリスト
+        """
+        selected_parts: list[str] = []
+        used_tokens = 0
+        for doc in documents:
+            part = doc.page_content or ""
+            part_tokens = len(enc.encode(part))
+            if used_tokens + part_tokens <= remaining_input_budget:
+                selected_parts.append(part)
+                used_tokens += part_tokens
+            else:
+                remaining = remaining_input_budget - used_tokens
+                if remaining > 0:
+                    try:
+                        ids = enc.encode(part)
+                        clipped = enc.decode(ids[:remaining])
+                    except Exception:
+                        avg_chars_per_token = 4
+                        clipped = part[: max(
+                            0, remaining * avg_chars_per_token)]
+                    if clipped:
+                        selected_parts.append(clipped)
+                        used_tokens = remaining_input_budget
+                break
+
+        return selected_parts
+
+    def _format_documents(self, selected_parts: list[str]) -> str:
+        """選択済みテキストパートを結合してコンテキストとして使用
+        Args:
+            selected_parts: テキスト片のリスト
 
         Returns:
             フォーマットされたコンテキスト
         """
-        return "\n\n".join(doc.page_content for doc in documets)
+        return "\n\n".join(selected_parts)
 
     async def get_system_info(self) -> dict[str, Any]:
         """システム情報を取得
