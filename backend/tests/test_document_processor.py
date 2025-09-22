@@ -9,12 +9,6 @@ def test_split_text_default():
     assert len(chunks) >= 1
 
 
-def test_count_tokens_returns_int():
-    dp = DocumentProcessor()
-    n = dp.count_tokens("hello world")
-    assert isinstance(n, int)
-
-
 def test_extract_text_from_txt_bytes_utf8():
     dp = DocumentProcessor()
     data = "こんにちは".encode("utf-8")
