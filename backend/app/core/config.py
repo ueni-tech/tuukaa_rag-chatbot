@@ -5,7 +5,6 @@
 
 import os
 from pathlib import Path
-from typing import Optional
 from pydantic_settings import BaseSettings
 
 
@@ -18,7 +17,7 @@ class Settings(BaseSettings):
 
     app_name: str = "tuukaa API"
     app_version: str = "0.1.0"
-    debug: bool = True
+    debug: bool = False
 
     host: str = "0.0.0.0"
     port: int = 8000
@@ -31,9 +30,9 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
 
     # LLM設定
-    default_model: str = "gpt-5-mini"
-    default_temperature: float = 0.0
-    default_top_k: int = 3
+    default_model: str = "gpt-4o-mini"
+    default_temperature: float = 0.2
+    default_top_k: int = 2
     max_chunk_size: int = 2000
     chunk_overlap: int = 200
 
@@ -42,26 +41,29 @@ class Settings(BaseSettings):
     allowed_extensions: list[str] = ["pdf"]
     upload_directory: str = "./uploads"
 
-    # ===== LP Domain =====
-    lp_model: str | None = None
-    lp_tone: str | None = None
-    lp_max_tokens: Optional[int] = None
-
     # ===== Embed Domain =====
     embed_collection_prefix: str | None = None
     embed_allowed_origins: str | None = None
     embed_api_keys: str | None = None
     rate_limit_rpm: int = 60
     daily_budget_jpy: float = 100.0
+    # 管理者用シークレット
+    admin_api_secret: str | None = None
 
     # ==== Redis設定 ====
     redis_url: str | None = "redis://localhost:6379/0"
 
     # === 料金・トークン上限 ===
     model_pricing: str | None = None  # 例: "gpt-4o-mini:0.002,gpt-4o:0.006"
-    default_max_output_tokens: int = 2048
+    default_max_output_tokens: int = 768
     # USD→JPY 為替レート（MODEL_PRICING を USD/token として受け取る想定）
     usd_jpy_rate: float = 148.117
+
+    # === 入力側のトークン予算（プロンプトと質問・コンテキストの合計に関する上限） ===
+    # モデルのコンテキストウィンドウ（既定値）。必要に応じて .env で上書き。
+    default_context_window_tokens: int = 8192
+    # システム/指示/テンプレート固定分として見込むオーバーヘッド
+    prompt_overhead_tokens: int = 512
 
     class ConfigDict:
         env_file = ".env"
@@ -100,7 +102,9 @@ class Settings(BaseSettings):
 
     @property
     def embed_allowed_origins_list(self) -> list[str]:
-        raw = os.getenv("EMBED_ALLOWED_ORIGINS") or (self.embed_allowed_origins or "")
+        raw = os.getenv("EMBED_ALLOWED_ORIGINS") or (
+            self.embed_allowed_origins or ""
+        )
         items = [o.strip() for o in raw.split(",") if o.strip()]
         if self.debug:
             return items or ["*"]

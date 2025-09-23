@@ -1,3 +1,4 @@
+import os
 import types
 from contextlib import asynccontextmanager
 from typing import Any
@@ -5,9 +6,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
-from app.core.web.dependencies import get_rag_engine
-from app.core.config import settings
+# テスト時は先に最低限の環境変数を設定（app.main を import する前に行う）
+os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("EMBED_ALLOWED_ORIGINS", "http://localhost")
 
 
 class FakeDocument:
@@ -39,7 +40,8 @@ class FakeRAGEngine:
     ) -> list[FakeDocument]:
         # クエリ文字列を元に簡単なドキュメントを返す
         return [
-            FakeDocument(page_content=f"doc for {query}", metadata={"tenant": tenant})
+            FakeDocument(page_content=f"doc for {query}", metadata={
+                         "tenant": tenant})
         ]
 
     async def generate_answer(
@@ -49,6 +51,7 @@ class FakeRAGEngine:
         model: str | None = None,
         temperature: float | None = None,
         tenant: str | None = None,
+        max_output_tokens: int | None = None,
     ) -> dict[str, Any]:
         return {
             "answer": f"answer to: {question}",
@@ -109,6 +112,7 @@ async def dummy_lifespan(app):
 
 @pytest.fixture()
 def app(monkeypatch):
+    from app.core.config import settings
     # ドキュメント用キーを設定
     settings.embed_api_keys = "acme:demo123"
     # TrustedHostMiddleware を避けるため debug を有効化
@@ -118,9 +122,11 @@ def app(monkeypatch):
     import app.main as main_mod
 
     monkeypatch.setattr(main_mod, "lifespan", dummy_lifespan)
+    from app.main import create_app
     application = create_app()
 
     # 依存関係をスタブに差し替え
+    from app.core.web.dependencies import get_rag_engine
     application.dependency_overrides[get_rag_engine] = lambda: FakeRAGEngine()
 
     return application

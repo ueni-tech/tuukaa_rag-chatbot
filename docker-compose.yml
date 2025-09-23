@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build:
@@ -11,12 +9,16 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app:cached
+      # venv はホストと分離（匿名ボリューム）
+      - /app/.venv
       - ./backend/vectorstore:/app/vectorstore # バインドマウントに変更
       - ./backend/uploads:/app/uploads # バインドマウントに変更
     env_file:
       - ./.env
     environment:
       - PYTHONPATH=/app
+    # ホストと同一 UID/GID で実行して権限不整合を回避
+    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       redis:
         condition: service_healthy

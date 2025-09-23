@@ -20,6 +20,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import SecretStr
 
 from ..config import settings
+import tiktoken
 
 
 class RAGEngine:
@@ -29,7 +30,8 @@ class RAGEngine:
 
     # RAG用プロンプトテンプレート（GFM厳密・冗長抑制）
     RAG_PROMPT_TEMPLATE = """\
-あなたは頼れる情報アシスタントです。アップロードされた資料の内容に基づいて、分かりやすく親しみやすい日本語でお答えします。
+あなたは頼れる情報アシスタントです。アップロードされた資料の内容に基づいて、分かりやすく親しみやすい日本語で回答してください。
+すばやく回答してください。
 
 重要な回答ルール:
 1. **アップロードされた資料に関係のない質問には答えません**
@@ -71,17 +73,19 @@ class RAGEngine:
         self.llm: ChatOpenAI | None = None
         self.vectorstore: Chroma | None = None
         self._ensure_directories()
-        self._llm_cache: dict[tuple[str, float], ChatOpenAI] = {}
+        self._llm_cache: dict[tuple[str, float, int], ChatOpenAI] = {}
 
     def _get_llm(
-        self, model: str | None, temperature: float | None
+        self, model: str | None, temperature: float | None, max_tokens: int | None = None
     ) -> tuple[ChatOpenAI, str]:
         """(model, temperature)ごとにLLMをキャッシュして取得"""
         used_model = model or settings.default_model
         used_temp = (
             temperature if temperature is not None else settings.default_temperature
         )
-        key = (used_model, used_temp)
+        used_max = int(max_tokens) if max_tokens is not None else int(
+            settings.default_max_output_tokens)
+        key = (used_model, used_temp, used_max)
         if key not in self._llm_cache:
             api_key = (
                 SecretStr(settings.openai_api_key)
@@ -89,7 +93,8 @@ class RAGEngine:
                 else None
             )
             self._llm_cache[key] = ChatOpenAI(
-                model=used_model, temperature=used_temp, api_key=api_key, timeout=60
+                model=used_model, temperature=used_temp, api_key=api_key, timeout=60,
+                max_tokens=used_max,
             )
         return self._llm_cache[key], used_model
 
@@ -117,6 +122,7 @@ class RAGEngine:
                 model=settings.default_model,
                 temperature=settings.default_temperature,
                 api_key=api_key,
+                max_tokens=settings.default_max_output_tokens,
             )
 
             await self._load_existing_vectorstore()
@@ -288,6 +294,7 @@ class RAGEngine:
         model: str | None = None,
         temperature: float | None = None,
         tenant: str | None = None,
+        max_output_tokens: int | None = None,
     ) -> dict[str, Any]:
         """RAGによる回答生成
         Args:
@@ -304,24 +311,72 @@ class RAGEngine:
             raise RuntimeError("RAGエンジンが初期化されていません")
 
         try:
-            documents = await self.search_documents(question, top_k, tenant=tenant)
+            # まず、テナントにドキュメントが存在するかチェック
+            doc_list = await self.get_document_list(tenant=tenant)
+            if doc_list["total_chunks"] == 0:
+                return {
+                    "answer": (
+                        "まずはドキュメントをアップロードしてください。"
+                        "質問にお答えするためには、関連する資料を"
+                        "アップロードしていただく必要があります。"
+                    ),
+                    "documents": [],
+                    "context_used": "",
+                    "llm_model": getattr(
+                        self.llm, "model", settings.default_model
+                    ),
+                }
+
+            documents = await self.search_documents(
+                question, top_k, tenant=tenant
+            )
 
             if not documents:
                 return {
                     "answer": "関連する文書が見つかりませんでした。",
                     "documents": [],
                     "context_used": "",
-                    "llm_model": getattr(self.llm, "model", settings.default_model),
+                    "llm_model": getattr(
+                        self.llm, "model", settings.default_model
+                    ),
                 }
 
-            context = self._format_documents(documents)
+            # トークンベース詰め込み（質問・プロンプト・出力上限を考慮した残り枠に収める）
+            model_for_encoding = model or getattr(
+                self.llm, "model", settings.default_model)
+            try:
+                enc = tiktoken.encoding_for_model(model_for_encoding)
+            except Exception:
+                enc = tiktoken.get_encoding("cl100k_base")
 
-            if model is not None or temperature is not None:
-                llm, used_model = self._get_llm(model, temperature)
+            context_window = getattr(
+                settings, "default_context_window_tokens", 8192)
+            prompt_overhead = getattr(settings, "prompt_overhead_tokens", 512)
+
+            question_tokens = len(enc.encode(question or ""))
+            fixed_prompt_tokens = prompt_overhead
+
+            used_max_out = int(max_output_tokens) if max_output_tokens is not None else int(
+                settings.default_max_output_tokens)
+
+            remaining_input_budget = max(
+                0, context_window - fixed_prompt_tokens - question_tokens - used_max_out)
+
+            selected_parts = self._select_context_parts(
+                documents, enc, remaining_input_budget
+            )
+
+            context = self._format_documents(selected_parts)
+
+            if model is not None or temperature is not None or max_output_tokens is not None:
+                llm, used_model = self._get_llm(
+                    model, temperature, max_output_tokens)
             else:
                 llm = self.llm
                 used_model = getattr(
-                    llm, "model", getattr(llm, "model_name", settings.default_model)
+                    llm,
+                    "model",
+                    getattr(llm, "model_name", settings.default_model),
                 )
 
             prompt = PromptTemplate.from_template(self.RAG_PROMPT_TEMPLATE)
@@ -357,15 +412,56 @@ class RAGEngine:
         except Exception as e:
             raise RuntimeError(f"回答生成に失敗しました: {str(e)}")
 
-    def _format_documents(self, documets: list[Document]) -> str:
-        """文書をフォーマットしてコンテキストとして使用
+    def _select_context_parts(
+        self,
+        documents: list[Document],
+        enc: Any,
+        remaining_input_budget: int,
+    ) -> list[str]:
+        """トークン予算内に収まるように文書内容を選択・クリップ
+
         Args:
-            documents: 文書のリスト
+            documents: 検索で得た文書のリスト
+            enc: トークナイザ（tiktoken エンコーダ）
+            remaining_input_budget: コンテキストとして投入可能なトークン数の上限
+
+        Returns:
+            コンテキストに使用するテキスト片のリスト
+        """
+        selected_parts: list[str] = []
+        used_tokens = 0
+        for doc in documents:
+            part = doc.page_content or ""
+            part_tokens = len(enc.encode(part))
+            if used_tokens + part_tokens <= remaining_input_budget:
+                selected_parts.append(part)
+                used_tokens += part_tokens
+            else:
+                remaining = remaining_input_budget - used_tokens
+                if remaining > 0:
+                    try:
+                        ids = enc.encode(part)
+                        clipped = enc.decode(ids[:remaining])
+                    except Exception:
+                        avg_chars_per_token = 4
+                        clipped = part[: max(
+                            0, remaining * avg_chars_per_token)]
+                    if clipped:
+                        selected_parts.append(clipped)
+                        used_tokens = remaining_input_budget
+                break
+
+        return selected_parts
+
+    def _format_documents(self, selected_parts: list[str]) -> str:
+        """選択済みテキストパートを結合してコンテキストとして使用
+        Args:
+            selected_parts: テキスト片のリスト
 
         Returns:
             フォーマットされたコンテキスト
         """
-        return "\n\n".join(doc.page_content for doc in documets)
+        return "\n\n".join(selected_parts)
 
     async def get_system_info(self) -> dict[str, Any]:
         """システム情報を取得
@@ -446,7 +542,8 @@ class RAGEngine:
             conditions = [{"file_id": {"$eq": file_id}}]
             if tenant is not None:
                 conditions.append({"tenant": {"$eq": tenant}})
-            where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
+            where = {"$and": conditions} if len(
+                conditions) > 1 else conditions[0]
 
             results = collection.get(where=where, include=["metadatas"])
             ids = results.get("ids") or []

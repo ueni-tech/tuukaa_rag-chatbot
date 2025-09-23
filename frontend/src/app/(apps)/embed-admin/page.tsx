@@ -19,7 +19,6 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import {
-  Bot,
   Copy,
   FileText,
   RefreshCw,
@@ -29,7 +28,6 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { config } from '@/lib/config'
 
 type TenantInfo = { name: string; key: string }
 type FileInfo = {
@@ -57,14 +55,23 @@ export default function EmbedAdminApp() {
     const loadTenants = async () => {
       setLoadingTenants(true)
       try {
-        const res = await fetch(`/api/embed-admin/tenants`, { method: 'GET' })
+        const res = await fetch(`/api/embed-admin/tenants`, {
+          method: 'GET',
+          cache: 'no-store',
+        })
         if (!res.ok) throw new Error('テナント一覧の取得に失敗しました')
         const data = await res.json()
         const list = (data?.tenants || []) as TenantInfo[]
         setTenants(list)
-        if (list.length > 0) {
-          setSelectedTenant(list[0].name)
-          setSelectedKey(list[0].key)
+        const savedKey =
+          typeof window !== 'undefined' ? localStorage.getItem('embed:key') : ''
+        const initial = list.find(t => t.key === savedKey) || list[0]
+        if (initial) {
+          setSelectedTenant(initial.name)
+          setSelectedKey(initial.key)
+          try {
+            localStorage.setItem('embed:key', initial.key)
+          } catch {}
         }
       } catch (e: any) {
         toast.error(e?.message || 'テナント一覧の取得に失敗しました')
@@ -74,6 +81,14 @@ export default function EmbedAdminApp() {
     }
     loadTenants()
   }, [])
+
+  // 選択されたキーを常に localStorage と同期
+  useEffect(() => {
+    if (!selectedKey) return
+    try {
+      localStorage.setItem('embed:key', selectedKey)
+    } catch {}
+  }, [selectedKey])
 
   useEffect(() => {
     const loadFiles = async () => {
@@ -101,7 +116,11 @@ export default function EmbedAdminApp() {
   const onChangeTenant = (name: string) => {
     setSelectedTenant(name)
     const t = tenants.find(t => t.name === name)
-    setSelectedKey(t?.key || '')
+    const key = t?.key || ''
+    setSelectedKey(key)
+    try {
+      localStorage.setItem('embed:key', key)
+    } catch {}
   }
 
   const onCopyKey = async () => {
@@ -235,17 +254,8 @@ export default function EmbedAdminApp() {
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 items-center px-4">
-          <div className="flex items-center gap-2 ml-0">
-            <Bot className="h-6 w-6" />
-            <h1 className="font-semibold">{config.appName} Admin</h1>
-          </div>
-        </div>
-      </div>
-
-      <ScrollArea className="flex-1 p-4">
+    <div className="flex flex-col flex-1 min-h-0">
+      <ScrollArea className="flex-1 min-h-0 p-4">
         <div className="space-y-4 max-w-5xl mx-auto">
           {/* 新規キー生成（クライアント側） */}
           <Card className="p-4">
@@ -383,7 +393,7 @@ export default function EmbedAdminApp() {
             </div>
           </Card>
 
-          <Card className="p-4">
+          <Card className="p-4 gap-2">
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-semibold">アップロード済みファイル</h2>
               <Button

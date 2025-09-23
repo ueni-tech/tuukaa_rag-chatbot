@@ -186,7 +186,7 @@ const response = await fetch("/api/v1/pdf/ask", {
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     question: "クラスの命名規則は？",
-    top_k: 3,
+    top_k: 2,
   }),
 });
 const data = await response.json();

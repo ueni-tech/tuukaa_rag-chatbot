@@ -1,4 +1,9 @@
 from __future__ import annotations
+import time
+import json
+import hashlib
+import datetime as dt
+import asyncio
 
 import re
 import urllib.request
@@ -16,7 +21,6 @@ from fastapi import (
     Request,
 )
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, NonNegativeInt
 from redis import Redis
 import os
 
@@ -76,24 +80,22 @@ def _strip_tags(html: str) -> str:
 
 
 # --- /ask の制限・課金用の簡易状態（メモリ内） ---
-import asyncio
-import datetime as dt
-import hashlib
-import json
-import time
 
 _rpm: dict[tuple[str, str, str], tuple[int, float]] = {}
 _cost: dict[tuple[str, str], float] = {}
 
 try:
-    # 既定: 1M tokens あたり 10 USD を為替換算 → JPY/token
-    default_usd_per_mtoken = 10.0
-    _DEF_PRICE = (float(default_usd_per_mtoken) / 1_000_000.0) * float(
-        getattr(settings, "usd_jpy_rate", 150.0)
-    )
+    # 既定: gpt-4o-mini の実コスト（USD/1M tokens）を為替換算 → JPY/token（in/out 別）
+    DEFAULT_USD_PER_MTOKEN_IN = 0.15
+    DEFAULT_USD_PER_MTOKEN_OUT = 0.60
+    _RATE = float(getattr(settings, "usd_jpy_rate", 150.0))
+    _DEF_PRICE_IN = (float(DEFAULT_USD_PER_MTOKEN_IN) / 1_000_000.0) * _RATE
+    _DEF_PRICE_OUT = (float(DEFAULT_USD_PER_MTOKEN_OUT) / 1_000_000.0) * _RATE
 except Exception:
-    # 例外時も同一基準で換算（単位一貫性を維持）
-    _DEF_PRICE = (10.0 / 1_000_000.0) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    # 例外時も gpt-4o-mini の in/out で換算（単位一貫性を維持）
+    _RATE = float(getattr(settings, "usd_jpy_rate", 150.0))
+    _DEF_PRICE_IN = (0.15 / 1_000_000.0) * _RATE
+    _DEF_PRICE_OUT = (0.60 / 1_000_000.0) * _RATE
 
 _RESP_MAX_TOKENS = 1024
 
@@ -233,11 +235,12 @@ async def ingest_url(
 
     text = _strip_tags(html)
     if not text:
-        raise HTTPException(400, f"本文抽出に失敗しました")
+        raise HTTPException(400, "本文抽出に失敗しました")
 
     chunk_size = p.chunk_size or settings.max_chunk_size
     chunk_overlap = p.chunk_overlap or settings.chunk_overlap
-    chunks = dp.split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = dp.split_text(text, chunk_size=chunk_size,
+                           chunk_overlap=chunk_overlap)
 
     res = await rag.create_vectorstore_from_chunks(
         chunks, filename=p.url, tenant=tenant, source_type="url", source=p.url
@@ -255,7 +258,8 @@ async def docs_search(
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
     docs = await rag.search_documents(req.question, req.top_k, tenant=tenant)
-    items = [DocumentInfo(content=d.page_content, metadata=d.metadata) for d in docs]
+    items = [DocumentInfo(content=d.page_content,
+                          metadata=d.metadata) for d in docs]
     return SearchResponse(documents=items, query=req.question, total_found=len(items))
 
 
@@ -265,10 +269,17 @@ async def docs_ask(
     request: Request,
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=True),
+    x_admin_api_secret: str | None = Header(
+        default=None, convert_underscores=True),
 ) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
+
+    is_admin = bool(
+        x_admin_api_secret
+        and x_admin_api_secret == getattr(settings, "admin_api_secret", None)
+    )
 
     # RPM 制限
     ip = request.client.host if request and request.client else "0.0.0.0"
@@ -282,47 +293,52 @@ async def docs_ask(
     if cnt > max(1, settings.rate_limit_rpm):
         raise HTTPException(429, "rate limit exceeded")
 
-    # 日次ブレーカ（事前見積り）
-    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
-    day = jst.strftime("%Y-%m-%d")
-    # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
-    selected_model = (question_req.model or settings.default_model or "").strip()
-    inout = settings.model_pricing_inout_map.get(selected_model)
-    if inout is None:
-        usd_in = usd_out = None
-    else:
-        usd_in, usd_out = inout
-    if usd_in is None:
-        jpy_in = _DEF_PRICE
-    else:
-        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
-    if usd_out is None:
-        jpy_out = _DEF_PRICE
-    else:
-        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+    # 日次ブレーカ（事前見積り、管理者はバイパス）
+    if not is_admin:
+        jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+        day = jst.strftime("%Y-%m-%d")
+        # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
+        selected_model = (
+            question_req.model or settings.default_model or "").strip()
+        inout = settings.model_pricing_inout_map.get(selected_model)
+        if inout is None:
+            usd_in = usd_out = None
+        else:
+            usd_in, usd_out = inout
+        if usd_in is None:
+            jpy_in = _DEF_PRICE_IN
+        else:
+            jpy_in = float(usd_in) * \
+                float(getattr(settings, "usd_jpy_rate", 150.0))
+        if usd_out is None:
+            jpy_out = _DEF_PRICE_OUT
+        else:
+            jpy_out = float(usd_out) * \
+                float(getattr(settings, "usd_jpy_rate", 150.0))
 
-    max_out = question_req.max_output_tokens or getattr(
-        settings, "default_max_output_tokens", _RESP_MAX_TOKENS
-    )
+        max_out = question_req.max_output_tokens or getattr(
+            settings, "default_max_output_tokens", _RESP_MAX_TOKENS
+        )
 
-    # 入力見積: 質問 + 参照文書(後で実際に取得するため、ここでは概算: 質問長のk倍)
-    # 事前見積は保守的に質問長×2 をRAGコンテキスト概算とする
-    qlen = len((question_req.question or ""))
-    input_est_tokens = max(1, (qlen + 2 * qlen) // 4)  # question + approx(context)
-    output_est_tokens = max_out
-    pre_est_cost = input_est_tokens * jpy_in + output_est_tokens * jpy_out
-    rc = _get_redis()
-    if rc:
-        key = f"cost:{day}:{tenant}"
-        used = float(rc.get(key) or 0.0)
-    else:
-        used = _cost.get((day, tenant), 0.0)
+        # 入力見積: 質問 + 参照文書(後で実際に取得するため、ここでは概算: 質問長のk倍)
+        # 事前見積は保守的に質問長×2 をRAGコンテキスト概算とする
+        qlen = len((question_req.question or ""))
+        # question + approx(context)
+        input_est_tokens = max(1, (qlen + 2 * qlen) // 4)
+        output_est_tokens = max_out
+        pre_est_cost = input_est_tokens * jpy_in + output_est_tokens * jpy_out
+        rc = _get_redis()
+        if rc:
+            key = f"cost:{day}:{tenant}"
+            used = float(rc.get(key) or 0.0)
+        else:
+            used = _cost.get((day, tenant), 0.0)
 
-    if (
-        settings.daily_budget_jpy > 0
-        and used + pre_est_cost > settings.daily_budget_jpy
-    ):
-        raise HTTPException(402, "本日の使用上限に達しました")
+        if (
+            settings.daily_budget_jpy > 0
+            and used + pre_est_cost > settings.daily_budget_jpy
+        ):
+            raise HTTPException(402, "本日の使用上限に達しました")
 
     # 回答生成（テナント分離）
     result = await rag.generate_answer(
@@ -331,75 +347,55 @@ async def docs_ask(
         model=question_req.model,
         temperature=question_req.temperature,
         tenant=tenant,
+        max_output_tokens=question_req.max_output_tokens,
     )
 
-    # 引用情報の縮約・重複排除
-    # documents は全文、citations は参照情報のみ（title/source/page など）
+    # 参照文書の情報を構築
     documents_items = [
         DocumentInfo(content=d["content"], metadata=d["metadata"])
         for d in result["documents"]
     ]
 
-    seen: set[tuple[str | None, int | None, str | None]] = set()
-    citations: list[DocumentInfo] = []
-    for d in result["documents"]:
-        m = d.get("metadata") or {}
-        source = m.get("source") or m.get("filename") or m.get("url") or "unknown"
-        page = m.get("page") or m.get("page_number")
-        try:
-            page_num = int(page) if page is not None else None
-        except Exception:
-            page_num = None
-        key = (str(source) if source is not None else None, page_num, m.get("file_id"))
-        if key in seen:
-            continue
-        seen.add(key)
-
-        title = m.get("title")
-        label_parts = [
-            p
-            for p in [
-                title,
-                source,
-                (f"p.{page_num}" if page_num is not None else None),
-            ]
-            if p
-        ]
-        label = " - ".join(label_parts) if label_parts else str(source)
-
-        citations.append(
-            DocumentInfo(
-                content=label,
-                metadata={
-                    "source": source,
-                    "page": page_num,
-                    "file_id": m.get("file_id"),
-                },
-            )
-        )
-
     # コスト（日次ブレーカ） 実績: 入力(質問+実際のcontext) と 出力(回答) を分離
     answer_text = result.get("answer", "")
     context_used = result.get("context_used", "")
-    input_tokens = max(1, len((question_req.question + "\n" + context_used)) // 4)
-    output_tokens = max(1, len(answer_text) // 4)
+    # tiktokenで実測（モデルは指定があればそれを使用、なければ既定）
+    try:
+        import tiktoken
+        model_for_encoding = (
+            question_req.model or settings.default_model or "").strip() or "gpt-4o-mini"
+        try:
+            enc = tiktoken.encoding_for_model(model_for_encoding)
+        except Exception:
+            enc = tiktoken.get_encoding("cl100k_base")
+        input_tokens = max(
+            1, len(enc.encode((question_req.question or "") + "\n" + (context_used or ""))))
+        output_tokens = max(1, len(enc.encode(answer_text or "")))
+    except Exception:
+        # フォールバック（概算）
+        input_tokens = max(
+            1, len((question_req.question + "\n" + context_used)) // 4)
+        output_tokens = max(1, len(answer_text) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
     # 事後計上: in/out 単価で合計
-    selected_model = (question_req.model or settings.default_model or "").strip()
+    selected_model = (
+        question_req.model or settings.default_model or "").strip()
     inout = settings.model_pricing_inout_map.get(selected_model)
     if inout is None:
         usd_in = usd_out = None
     else:
         usd_in, usd_out = inout
     if usd_in is None:
-        jpy_in = _DEF_PRICE
+        jpy_in = _DEF_PRICE_IN
     else:
-        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
+        jpy_in = float(usd_in) * \
+            float(getattr(settings, "usd_jpy_rate", 150.0))
     if usd_out is None:
-        jpy_out = _DEF_PRICE
+        jpy_out = _DEF_PRICE_OUT
     else:
-        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
+        jpy_out = float(usd_out) * \
+            float(getattr(settings, "usd_jpy_rate", 150.0))
 
     est_cost = input_tokens * jpy_in + output_tokens * jpy_out
     rc = _get_redis()
@@ -461,8 +457,6 @@ async def docs_ask(
                     last_hb = now
                 await asyncio.sleep(0.01)
             payload = {
-                "citations": [c.model_dump() for c in (citations or [])]
-                or ["引用なし"],
                 "tokens": input_tokens + output_tokens,
                 "cost_jpy": round(est_cost, 4),
             }
@@ -475,9 +469,7 @@ async def docs_ask(
         answer=answer_text,
         question=question_req.question,
         documents=documents_items,
-        context_used=result["context_used"],
         llm_model=result["llm_model"],
-        citations=citations or [DocumentInfo(content="引用なし", metadata={})],
         tokens=input_tokens + output_tokens,
         cost_jpy=round(est_cost, 4),
     )
@@ -486,9 +478,9 @@ async def docs_ask(
 @router.get("/documents", response_model=DocumentListResponse)
 async def docs_list(
     rag: RAGEngine = Depends(get_rag_engine),
-    X_embed_key: str | None = Header(default=None, convert_underscores=True),
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
 ) -> DocumentListResponse:
-    tenant = _tenant_from_key(X_embed_key)
+    tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
     result = await rag.get_document_list(tenant=tenant)

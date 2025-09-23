@@ -2,14 +2,12 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card } from '@/components/ui/card'
-import { Send, Bot, User, Search, Thermometer } from 'lucide-react'
-import { SidebarTrigger } from '@/components/ui/sidebar'
+import { Send, Bot, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { config } from '@/lib/config'
-import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -20,6 +18,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { useSettingsStore } from '@/lib/settings-store'
+import { Input } from '@/components/ui/input'
 import dynamic from 'next/dynamic'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -63,13 +62,71 @@ interface Message {
   llm_model?: string
 }
 
+type TenantInfo = { name: string; key: string }
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isBot, setIsBot] = useState(true)
+  const [isBot] = useState(true)
   const topK = useSettingsStore(s => s.topK)
+  // 各メッセージ要素への参照を保持
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const [scrollToId, setScrollToId] = useState<string | null>(null)
+  const [tenants, setTenants] = useState<TenantInfo[]>([])
+  const [selectedTenant, setSelectedTenant] = useState('')
+  const [selectedKey, setSelectedKey] = useState('')
+  const [isInitialized, setIsInitialized] = useState(false)
+  const setTopK = useSettingsStore(s => s.setTopK)
+  const DEFAULT_MAX_TOKENS = 768
+  const [maxTokens, setMaxTokens] = useState<number>(DEFAULT_MAX_TOKENS)
+  const [maxTokensInput, setMaxTokensInput] = useState<string>(
+    String(DEFAULT_MAX_TOKENS)
+  )
 
+  // テナントの初期ロード
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetch('/api/embed-admin/tenants', {
+          cache: 'no-store',
+        })
+        const data = await res.json()
+        const list = (data?.tenants || []) as TenantInfo[]
+        setTenants(list)
+      } catch {
+        console.error('Failed to load tenants')
+      }
+    })()
+  }, [])
+
+  // tenantsが読み込まれた時のテナントとキーの選択
+  useEffect(() => {
+    if (tenants.length === 0) return
+
+    const saveKey =
+      typeof window !== 'undefined' ? localStorage.getItem('embed:key') : ''
+    const initial = tenants.find(t => t.key === saveKey) || tenants[0]
+
+    if (initial) {
+      setSelectedTenant(initial.name)
+      setSelectedKey(initial.key)
+      try {
+        localStorage.setItem('embed:key', initial.key)
+      } catch {}
+    }
+    setIsInitialized(true)
+  }, [tenants])
+
+  // 選択されたキーを常に localStorage と同期
+  useEffect(() => {
+    if (!selectedKey) return
+    try {
+      localStorage.setItem('embed:key', selectedKey)
+    } catch {}
+  }, [selectedKey])
+
+  // LLMのセットアップ
   const MODELS = [
     'gpt-5',
     'gpt-5-mini',
@@ -79,24 +136,26 @@ export default function ChatPage() {
   ] as const
   type Model = (typeof MODELS)[number]
   const DEFAULT_MODEL: Model = 'gpt-5-mini'
-  const [model, setModel] = useState<Model>(DEFAULT_MODEL)
   const mounted = useRef(false)
+  const [model, setModel] = useState<Model>(() => {
+    // 初期化時にlocalStorageから読み込む
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('llm:model')
+        if (saved) {
+          return saved as Model
+        }
+      }
+    } catch {}
+    return DEFAULT_MODEL
+  })
   const isModel = (v: string): v is Model =>
     (MODELS as readonly string[]).includes(v)
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('llm:model')
-      if (saved && isModel(saved)) {
-        setModel(saved)
-      } else {
-        setModel(DEFAULT_MODEL)
-      }
-    } catch {}
     mounted.current = true
   }, [])
 
-  // 2回目以降: 変更があったときだけ保存（無効値をブロック）
   useEffect(() => {
     if (!mounted.current) return
     try {
@@ -115,6 +174,8 @@ export default function ChatPage() {
     }
 
     setMessages(prev => [...prev, userMessage])
+    // 直後にそのメッセージへスクロールするためIDを記録
+    setScrollToId(userMessage.id)
     setInput('')
     setIsLoading(true)
 
@@ -122,16 +183,21 @@ export default function ChatPage() {
       const model =
         typeof window !== 'undefined' ? localStorage.getItem('llm:model') : null
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (selectedKey) headers['x-embed-key'] = selectedKey
+      // 管理画面なので常にadmin権限を付与
+      headers['x-admin-api-secret'] = 'admin'
+
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
-          messages: [...messages, userMessage],
-          askToBot: isBot,
-          model: model || undefined,
+          question: userMessage.content,
           top_k: topK,
+          model: model || undefined,
+          max_output_tokens: maxTokens,
         }),
       })
 
@@ -166,21 +232,30 @@ export default function ChatPage() {
     }
   }
 
-  return (
-    <div className="flex flex-col h-screen">
-      {/* Header */}
-      <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 items-center px-4">
-          <SidebarTrigger />
-          <div className="flex items-center gap-2 ml-4">
-            <Bot className="h-6 w-6" />
-            <h1 className="font-semibold">{config.appName}</h1>
-          </div>
-        </div>
-      </div>
+  // メッセージが更新されたら指定IDの要素へスクロール
+  useEffect(() => {
+    if (!scrollToId) return
+    const el = messageRefs.current[scrollToId]
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    setScrollToId(null)
+  }, [messages, scrollToId])
 
+  const onChangeTenant = (name: string) => {
+    setSelectedTenant(name)
+    const t = tenants.find(x => x.name === name)
+    setSelectedKey(t?.key || '')
+    setMessages([])
+    try {
+      localStorage.setItem('embed:key', t?.key || '')
+    } catch {}
+  }
+
+  return (
+    <div className="flex flex-col flex-1 h-[calc(100vh-57px)]">
       {/* Chat Message */}
-      <ScrollArea className="flex-1 p-4">
+      <ScrollArea className="flex-1 min-h-0 p-4">
         <div className="space-y-4 max-w-5xl mx-auto">
           {messages.length === 0 && (
             <div className="text-center text-muted-foreground py-8">
@@ -202,6 +277,9 @@ export default function ChatPage() {
             <div
               key={message.id}
               className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              ref={el => {
+                messageRefs.current[message.id] = el
+              }}
             >
               <div
                 className={`flex gap-3 max-w-[80%] ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
@@ -253,7 +331,7 @@ export default function ChatPage() {
                           <p className="font-medium truncate">
                             {doc.metadata?.souce || `文書 ${docIndex + 1}`}
                           </p>
-                          <p className="line-clamp-2">{doc.content}</p>
+                          <p className="line-clamp-3">{doc.content}</p>
                         </div>
                       ))}
                     </div>
@@ -290,47 +368,131 @@ export default function ChatPage() {
       {/* Input Form */}
       <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <form
-          className="flex gap-2 p-4 max-w-5xl mx-auto"
+          className="flex flex-col gap-4 px-2 py-6 max-w-5xl mx-auto"
           onSubmit={handleSubmit}
         >
-          <div className="flex items-center justify-between gap-1">
-            <Search className="h-4 w-4" />
-            <Switch checked={isBot} onCheckedChange={setIsBot} />
-            <Bot className="h-4 w-4" />
-          </div>
-          {/* LLM */}
-          <div>
+          <div className="flex w-full justify-between items-center gap-2">
             <Select
-              value={MODELS.includes(model) ? model : DEFAULT_MODEL}
-              onValueChange={v => {
-                if (v && isModel(v)) setModel(v)
-              }}
+              value={isInitialized ? selectedTenant : ''}
+              onValueChange={onChangeTenant}
+              disabled={!isInitialized}
             >
-              <SelectTrigger
-                className={isBot ? '' : 'cursor-not-allowed'}
-                disabled={!isBot}
-              >
-                <SelectValue />
+              <SelectTrigger className="w-[180px]">
+                <SelectValue
+                  placeholder={isInitialized ? 'テナント' : '読み込み中...'}
+                />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gpt-5">gpt-5</SelectItem>
-                <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
-                <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
-                <SelectItem value="gpt-4o">gpt-4o</SelectItem>
-                <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                {tenants.map(t => (
+                  <SelectItem key={t.key} value={t.name}>
+                    {t.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2 w-[200px]">
+              <Label className="whitespace-nowrap">top_k: {topK}</Label>
+              <Slider
+                min={1}
+                max={10}
+                step={1}
+                value={[topK]}
+                onValueChange={v => setTopK(v[0] ?? 3)}
+              />
+            </div>
+            <div className="flex items-center gap-2 w-[360px]">
+              <Label className="whitespace-nowrap">max_tokens</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={4096}
+                step={1}
+                className="w-28"
+                value={maxTokensInput}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const raw = e.target.value
+                  setMaxTokensInput(raw)
+                  if (raw === '') return
+                  const v = parseInt(raw, 10)
+                  if (!Number.isNaN(v)) {
+                    const clamped = Math.max(1, Math.min(4096, v))
+                    setMaxTokens(clamped)
+                  }
+                }}
+                onBlur={() => {
+                  if (maxTokensInput.trim() === '') {
+                    setMaxTokens(DEFAULT_MAX_TOKENS)
+                    setMaxTokensInput(String(DEFAULT_MAX_TOKENS))
+                  } else {
+                    const v = parseInt(maxTokensInput, 10)
+                    if (Number.isNaN(v)) {
+                      setMaxTokens(DEFAULT_MAX_TOKENS)
+                      setMaxTokensInput(String(DEFAULT_MAX_TOKENS))
+                    } else {
+                      const clamped = Math.max(1, Math.min(4096, v))
+                      setMaxTokens(clamped)
+                      setMaxTokensInput(String(clamped))
+                    }
+                  }
+                }}
+              />
+              <Slider
+                min={1}
+                max={4096}
+                step={64}
+                value={[maxTokens]}
+                onValueChange={v => {
+                  const val = v[0] ?? DEFAULT_MAX_TOKENS
+                  setMaxTokens(val)
+                  setMaxTokensInput(String(val))
+                }}
+              />
+            </div>
+            {/* LLM */}
+            <div>
+              <Select
+                value={model}
+                onValueChange={v => {
+                  if (v && isModel(v)) setModel(v)
+                }}
+              >
+                <SelectTrigger
+                  className={isBot ? '' : 'cursor-not-allowed'}
+                  disabled={!isBot}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gpt-5">gpt-5</SelectItem>
+                  <SelectItem value="gpt-5-mini">gpt-5-mini</SelectItem>
+                  <SelectItem value="gpt-4.1">gpt-4.1</SelectItem>
+                  <SelectItem value="gpt-4o">gpt-4o</SelectItem>
+                  <SelectItem value="gpt-4o-mini">gpt-4o-mini</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <Input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Ask a question about your PDF..."
-            className="flex-1"
-            disabled={isLoading}
-          />
-          <Button type="submit" size="icon" disabled={isLoading}>
-            <Send className="h-4 w-4" />
-          </Button>
+          <div className="flex w-full justify-between items-end gap-2">
+            <Textarea
+              value={input}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                setInput(e.target.value)
+              }
+              placeholder={`Ask a question about tenant\'s documents...\nShift+Enterで改行`}
+              className="flex-1 resize-none"
+              disabled={isLoading}
+              onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSubmit(e as any)
+                }
+              }}
+            />
+            <Button type="submit" size="icon" disabled={isLoading}>
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
         </form>
       </div>
     </div>
