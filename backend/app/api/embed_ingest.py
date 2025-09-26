@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     Header,
     HTTPException,
@@ -23,6 +24,8 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from redis import Redis
 import os
+
+from regex import F
 
 from ..core.config import settings
 from ..core.web.dependencies import get_rag_engine
@@ -40,6 +43,7 @@ from ..models.schemas import (
     SystemInfoResponse,
     UrlRequest,
     GenericUploadResponse,
+    FeedbackRequest,
 )
 
 router = APIRouter(prefix="/embed/docs", tags=["EmbedDocs"])
@@ -239,8 +243,7 @@ async def ingest_url(
 
     chunk_size = p.chunk_size or settings.max_chunk_size
     chunk_overlap = p.chunk_overlap or settings.chunk_overlap
-    chunks = dp.split_text(text, chunk_size=chunk_size,
-                           chunk_overlap=chunk_overlap)
+    chunks = dp.split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
     res = await rag.create_vectorstore_from_chunks(
         chunks, filename=p.url, tenant=tenant, source_type="url", source=p.url
@@ -258,8 +261,7 @@ async def docs_search(
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
     docs = await rag.search_documents(req.question, req.top_k, tenant=tenant)
-    items = [DocumentInfo(content=d.page_content,
-                          metadata=d.metadata) for d in docs]
+    items = [DocumentInfo(content=d.page_content, metadata=d.metadata) for d in docs]
     return SearchResponse(documents=items, query=req.question, total_found=len(items))
 
 
@@ -269,8 +271,7 @@ async def docs_ask(
     request: Request,
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=True),
-    x_admin_api_secret: str | None = Header(
-        default=None, convert_underscores=True),
+    x_admin_api_secret: str | None = Header(default=None, convert_underscores=True),
 ) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -298,8 +299,7 @@ async def docs_ask(
         jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         day = jst.strftime("%Y-%m-%d")
         # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
-        selected_model = (
-            question_req.model or settings.default_model or "").strip()
+        selected_model = (question_req.model or settings.default_model or "").strip()
         inout = settings.model_pricing_inout_map.get(selected_model)
         if inout is None:
             usd_in = usd_out = None
@@ -308,13 +308,11 @@ async def docs_ask(
         if usd_in is None:
             jpy_in = _DEF_PRICE_IN
         else:
-            jpy_in = float(usd_in) * \
-                float(getattr(settings, "usd_jpy_rate", 150.0))
+            jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
         if usd_out is None:
             jpy_out = _DEF_PRICE_OUT
         else:
-            jpy_out = float(usd_out) * \
-                float(getattr(settings, "usd_jpy_rate", 150.0))
+            jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
 
         max_out = question_req.max_output_tokens or getattr(
             settings, "default_max_output_tokens", _RESP_MAX_TOKENS
@@ -362,25 +360,29 @@ async def docs_ask(
     # tiktokenで実測（モデルは指定があればそれを使用、なければ既定）
     try:
         import tiktoken
+
         model_for_encoding = (
-            question_req.model or settings.default_model or "").strip() or "gpt-4o-mini"
+            question_req.model or settings.default_model or ""
+        ).strip() or "gpt-4o-mini"
         try:
             enc = tiktoken.encoding_for_model(model_for_encoding)
         except Exception:
             enc = tiktoken.get_encoding("cl100k_base")
         input_tokens = max(
-            1, len(enc.encode((question_req.question or "") + "\n" + (context_used or ""))))
+            1,
+            len(
+                enc.encode((question_req.question or "") + "\n" + (context_used or ""))
+            ),
+        )
         output_tokens = max(1, len(enc.encode(answer_text or "")))
     except Exception:
         # フォールバック（概算）
-        input_tokens = max(
-            1, len((question_req.question + "\n" + context_used)) // 4)
+        input_tokens = max(1, len((question_req.question + "\n" + context_used)) // 4)
         output_tokens = max(1, len(answer_text) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
     # 事後計上: in/out 単価で合計
-    selected_model = (
-        question_req.model or settings.default_model or "").strip()
+    selected_model = (question_req.model or settings.default_model or "").strip()
     inout = settings.model_pricing_inout_map.get(selected_model)
     if inout is None:
         usd_in = usd_out = None
@@ -389,13 +391,11 @@ async def docs_ask(
     if usd_in is None:
         jpy_in = _DEF_PRICE_IN
     else:
-        jpy_in = float(usd_in) * \
-            float(getattr(settings, "usd_jpy_rate", 150.0))
+        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
     if usd_out is None:
         jpy_out = _DEF_PRICE_OUT
     else:
-        jpy_out = float(usd_out) * \
-            float(getattr(settings, "usd_jpy_rate", 150.0))
+        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
 
     est_cost = input_tokens * jpy_in + output_tokens * jpy_out
     rc = _get_redis()
@@ -514,6 +514,44 @@ async def docs_delete(
         )
 
     raise HTTPException(400, "filename と file_id を指定してください")
+
+
+@router.post("/feedback")
+async def docs_feedback(
+    payload: FeedbackRequest,
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
+) -> dict[str, str]:
+    tenant = _tenant_from_key(x_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+
+    resolved = payload.resolved
+    message_id = payload.message_id
+    if not message_id:
+        raise HTTPException(400, "message_id は必須です")
+
+    rc = _get_redis()
+    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+    day = jst.strftime("%Y-%m-%d")
+    if rc:
+        rc.hincrby(f"feedback:{day}:{tenant}", "yes" if resolved else "no", 1)
+        rc.lpush(
+            f"logs:{tenant}",
+            json.dumps(
+                {
+                    "ts": int(time.time()),
+                    "tenant": tenant,
+                    "message_id": message_id,
+                    "event": "feedback",
+                    "resolved": resolved,
+                    "client_id": payload.client_id,
+                    "session_id": payload.session_id,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        rc.ltrim(f"logs:{tenant}", 0, 1000)
+    return {"status": "ok"}
 
 
 @router.get("/system/info", response_model=SystemInfoResponse)
