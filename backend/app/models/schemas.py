@@ -22,12 +22,12 @@ __all__ = [
     "ErrorResponse",
     "HealthResponse",
     "UrlRequest",
+    "FeedbackRequest",
 ]
 
 
 class QuestionRequest(BaseModel):
-    question: str = Field(..., min_length=1,
-                          max_length=1000, description="質問内容")
+    question: str = Field(..., min_length=1, max_length=1000, description="質問内容")
     top_k: int | None = Field(None, ge=1, le=10, description="検索結果の上位k件")
     model: str | None = Field(None, description="LLMモデル指定")
     temperature: float | None = Field(
@@ -36,6 +36,13 @@ class QuestionRequest(BaseModel):
     max_output_tokens: int | None = Field(
         None, ge=1, le=4096, description="出力トークンの上限(見積もり用の上限)"
     )
+    client_id: str | None = Field(
+        None, description="匿名クライアントID（ブラウザ単位）"
+    )
+    session_id: str | None = Field(
+        None, description="セッションID（30分非活動で再発行など任意運用）"
+    )
+    message_id: str | None = Field(None, description="このやりとりのメッセージID")
 
     @field_validator("question")
     @staticmethod
@@ -146,3 +153,10 @@ class TenantInfo(BaseModel):
 
 class TenantListResponse(BaseModel):
     tenants: list[TenantInfo] = Field(..., description="テナント一覧")
+
+
+class FeedbackRequest(BaseModel):
+    message_id: str = Field(..., min_length=1, description="メッセージID")
+    resolved: bool = Field(..., description="解決フラグ")
+    client_id: str | None = Field(None, description="匿名クライアントID")
+    session_id: str | None = Field(None, description="セッションID")

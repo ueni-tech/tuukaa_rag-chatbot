@@ -848,6 +848,31 @@
       }
     }
 
+    function renderFeedback(bubbleEl, apiBase, key, messageId) {
+      const wrap = document.createElement('div')
+      wrap.style.marginTop = '8px'
+      wrap.innerHTML = `
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:12px;color:#718096">この回答は役に立ちましたか？</span>
+          <button class="retry-btn">はい</button>
+          <button class="retry-btn" style="background:#6b7280">いいえ</button>
+        </div>`
+      const [yesBtn, noBtn] = wrap.querySelectorAll('button')
+      const send = async resolved => {
+        try {
+          await fetch(`${apiBase}/api/v1/embed/docs/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-embed-key': key },
+            body: JSON.stringify({ message_id: messageId, resolved }),
+          })
+        } catch {}
+        wrap.innerHTML = `<span style="font-size:12px;color:#718096">ご回答ありがとうございました</span>`
+      }
+      yesBtn.onclick = () => send(true)
+      noBtn.onclick = () => send(false)
+      bubbleEl.appendChild(wrap)
+    }
+
     const key = host.getAttribute(ATTR_KEY) || ''
     const apiBase = host.getAttribute('data-api-base') || window.location.origin
     // AbortController（現在のリクエストのキャンセル制御）
@@ -903,6 +928,30 @@
         } catch {}
       }, FIRST_BYTE_TIMEOUT_MS)
 
+      // 匿名 client_id と session_id の生成・維持（localStorage）
+      const CID_KEY = 'tuukaa:client_id'
+      const SID_KEY = 'tuukaa:session_id'
+      function getOrCreateId(k) {
+        try {
+          let v = localStorage.getItem(k)
+          if (!v) {
+            v =
+              (crypto.randomUUID && crypto.randomUUID().replace(/-/g, '')) ||
+              Math.random().toString(36).slice(2)
+            localStorage.setItem(k, v)
+          }
+          return v
+        } catch {
+          return Math.random().toString(36).slice(2)
+        }
+      }
+      let clientId = getOrCreateId(CID_KEY)
+      let sessionId = getOrCreateId(SID_KEY)
+
+      const messageId =
+        (crypto.randomUUID && crypto.randomUUID().replace(/-/g, '')) ||
+        String(Date.now())
+
       try {
         const res = await fetch(`${apiBase}/api/v1/embed/docs/ask`, {
           method: 'POST',
@@ -911,7 +960,13 @@
             Accept: 'text/event-stream',
             'x-embed-key': key,
           },
-          body: JSON.stringify({ question: q, top_k: 2 }),
+          body: JSON.stringify({
+            question: q,
+            top_k: 2,
+            client_id: clientId,
+            session_id: sessionId,
+            message_id: messageId,
+          }),
           signal,
         })
 
@@ -958,6 +1013,8 @@
             }
           }
           clearTimers()
+          // フィードバックUIを表示
+          renderFeedback(aiBubble, apiBase, key, messageId)
         } else if (!res.ok) {
           typing.remove()
           const responseText = await res.text().catch(() => '')
@@ -973,7 +1030,9 @@
           const json = await res.json().catch(() => ({}))
           const answer = json && json.answer ? String(json.answer) : ''
           const html = renderMarkdown(answer)
-          appendMessage('ai', html)
+          const bubble = appendMessage('ai', html)
+          // フィードバックUIを表示
+          renderFeedback(bubble, apiBase, key, messageId)
         }
       } catch (e) {
         typing.remove()
