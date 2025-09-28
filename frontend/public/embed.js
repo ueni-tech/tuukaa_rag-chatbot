@@ -646,7 +646,6 @@
         document.head.appendChild(s)
       })
     }
-    // pre-load in background (ignore errors -> fallback renderer will be used)
     loadScript(MARKED_URL).catch(() => {})
     loadScript(PURIFY_URL).catch(() => {})
 
@@ -661,16 +660,13 @@
 
     function preprocessMarkdown(text) {
       let s = String(text || '')
-      // unwrap full fenced block like ```markdown ... ``` or ```md ... ```
       s = s
         .trim()
         .replace(/^```\s*(?:markdown|md)\s*\n([\s\S]*?)\n```\s*$/i, '$1')
-      // drop leading label line 'markdown' or 'md'
       s = s.replace(/^(?:markdown|md)\s*\n/i, '')
       return s
     }
 
-    // Fallback simple renderer (used until libraries are available or if blocked by CSP)
     function simpleRenderMarkdown(md) {
       let s = preprocessMarkdown(md)
       s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -738,7 +734,6 @@
       wrap.className = 'msg ' + (role === 'user' ? 'user' : 'ai')
       const b = document.createElement('div')
       b.className = 'bubble'
-      // For user messages, preserve line breaks
       if (role === 'user') {
         b.innerHTML = html.replace(/\n/g, '<br>')
       } else {
@@ -828,7 +823,6 @@
             showRetry: true,
           }
         default:
-          // Try to parse error message from response
           let errorMsg = 'エラーが発生しました。もう一度お試しください。'
           try {
             const errorData = JSON.parse(responseText)
@@ -1013,7 +1007,6 @@
             }
           }
           clearTimers()
-          // フィードバックUIを表示
           renderFeedback(aiBubble, apiBase, key, messageId)
         } else if (!res.ok) {
           typing.remove()
@@ -1063,9 +1056,7 @@
           )
         }
       } finally {
-        // タイマー後始末
         clearTimers()
-        // UI reset only if this call is the latest
         if (currentController === controller) {
           currentController = null
           sendBtn.disabled = false
@@ -1075,7 +1066,6 @@
       }
     }
 
-    // Remove auto-resize functionality since we want fixed height
 
     sendBtn.addEventListener('click', () => {
       const q = (textarea.value || '').trim()
@@ -1092,13 +1082,10 @@
       }
     })
 
-    // Pointer cursor when hovering over the scrollbar area (heuristic)
-    // Compute if mouse is within 12px from the right edge of the textarea's content box
     function updateScrollbarCursor(e) {
       const rect = textarea.getBoundingClientRect()
       const dx = rect.right - e.clientX
-      const nearScrollbar = dx >= 0 && dx <= 12 // heuristic width including overlay scrollbars
-      // Only when overflow-y is scrollable and content exceeds height
+      const nearScrollbar = dx >= 0 && dx <= 12
       const scrollable = textarea.scrollHeight > textarea.clientHeight
       textarea.style.cursor = nearScrollbar && scrollable ? 'pointer' : 'text'
     }
@@ -1107,7 +1094,6 @@
       textarea.style.cursor = 'text'
     })
 
-    // toggle open/close
     let open = false
     function setOpen(v) {
       open = !!v
