@@ -8,7 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 # FastAPI関連（フェーズ2で追加）
-fastapi = ">=0.115.9,<1.0.0"
+fastapi = "^0.104.1"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 python-multipart = "^0.0.6"
 pydantic-settings = "^2.1.0"
@@ -20,7 +20,7 @@ langchain-chroma = "^0.2.4"
 # フェーズ1から継承（その他）- 完全に同じバージョン
 python-dotenv = "^1.0.1"
 tiktoken = "^0.9.0"
-chromadb = "1.0.12"
+chromadb = "^1.0.12"
 # フェーズ1から継承（Streamlit - 将来の比較用に残しておく）
 streamlit = "^1.32.0"
  # ファイル抽出系（本番依存）
