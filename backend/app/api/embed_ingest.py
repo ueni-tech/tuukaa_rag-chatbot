@@ -40,7 +40,7 @@ from ..models.schemas import (
     SystemInfoResponse,
     UrlRequest,
     GenericUploadResponse,
-    FeedbackRequest
+    FeedbackRequest,
 )
 
 router = APIRouter(prefix="/embed/docs", tags=["EmbedDocs"])
@@ -533,7 +533,7 @@ async def docs_feedback(
     if rc:
         rc.hincrby(f"feedback:{day}:{tenant}", "yes" if resolved else "no", 1)
         rc.lpush(
-            f"logs:{tenant}",
+            f"logs:feedback:{tenant}",
             json.dumps(
                 {
                     "ts": int(time.time()),
@@ -547,7 +547,7 @@ async def docs_feedback(
                 ensure_ascii=False,
             ),
         )
-        rc.ltrim(f"logs:{tenant}", 0, 5000)
+        rc.ltrim(f"logs:feedback:{tenant}", 0, 1000)
     return {"status": "ok"}
 
 
