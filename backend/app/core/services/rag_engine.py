@@ -11,6 +11,7 @@ from datetime import datetime
 import uuid
 
 from chromadb.config import Settings as ChromaSettings
+import chromadb
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
@@ -72,19 +73,26 @@ class RAGEngine:
         self.embeddings: OpenAIEmbeddings | None = None
         self.llm: ChatOpenAI | None = None
         self.vectorstore: Chroma | None = None
+        self._chroma_client: Any | None = None
         self._ensure_directories()
         self._llm_cache: dict[tuple[str, float, int], ChatOpenAI] = {}
 
     def _get_llm(
-        self, model: str | None, temperature: float | None, max_tokens: int | None = None
+        self,
+        model: str | None,
+        temperature: float | None,
+        max_tokens: int | None = None,
     ) -> tuple[ChatOpenAI, str]:
         """(model, temperature)ごとにLLMをキャッシュして取得"""
         used_model = model or settings.default_model
         used_temp = (
             temperature if temperature is not None else settings.default_temperature
         )
-        used_max = int(max_tokens) if max_tokens is not None else int(
-            settings.default_max_output_tokens)
+        used_max = (
+            int(max_tokens)
+            if max_tokens is not None
+            else int(settings.default_max_output_tokens)
+        )
         key = (used_model, used_temp, used_max)
         if key not in self._llm_cache:
             api_key = (
@@ -93,7 +101,10 @@ class RAGEngine:
                 else None
             )
             self._llm_cache[key] = ChatOpenAI(
-                model=used_model, temperature=used_temp, api_key=api_key, timeout=60,
+                model=used_model,
+                temperature=used_temp,
+                api_key=api_key,
+                timeout=60,
                 max_tokens=used_max,
             )
         return self._llm_cache[key], used_model
@@ -124,6 +135,31 @@ class RAGEngine:
                 api_key=api_key,
                 max_tokens=settings.default_max_output_tokens,
             )
+            # ChromaDB (v0.5.x) の初期化: 既定テナント/DB を用意し、クライアントを確立
+            try:
+                admin = chromadb.AdminClient(self.chroma_settings)
+                try:
+                    admin.create_tenant(name="default_tenant")
+                except Exception:
+                    pass
+                try:
+                    admin.create_database(
+                        name="default_database", tenant="default_tenant"
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                # AdminClient が失敗しても後続で Client が初期化できる可能性があるため続行
+                pass
+
+            try:
+                self._chroma_client = chromadb.Client(
+                    self.chroma_settings,
+                    tenant="default_tenant",
+                    database="default_database",
+                )
+            except Exception:
+                self._chroma_client = None
 
             await self._load_existing_vectorstore()
 
@@ -137,11 +173,16 @@ class RAGEngine:
         """
         try:
             if settings.persist_path.exists() and self.embeddings:
-                self.vectorstore = Chroma(
-                    persist_directory=str(settings.persist_path),
-                    embedding_function=self.embeddings,
-                    client_settings=self.chroma_settings,
-                )
+                # 既存のベクトルストアに接続（client を優先して使用）
+                kwargs: dict[str, Any] = {
+                    "persist_directory": str(settings.persist_path),
+                    "embedding_function": self.embeddings,
+                }
+                if self._chroma_client is not None:
+                    kwargs["client"] = self._chroma_client
+                else:
+                    kwargs["client_settings"] = self.chroma_settings
+                self.vectorstore = Chroma(**kwargs)
                 return True
         except Exception:
             pass
@@ -195,12 +236,21 @@ class RAGEngine:
 
             if not self.vectorstore:
                 # 新規作成
-                self.vectorstore = Chroma.from_texts(
-                    texts=chunks,
-                    embedding=self.embeddings,
-                    metadatas=metadatas,
-                    client_settings=self.chroma_settings,
-                )
+                if self._chroma_client is not None:
+                    self.vectorstore = Chroma.from_texts(
+                        texts=chunks,
+                        embedding=self.embeddings,
+                        metadatas=metadatas,
+                        client=self._chroma_client,
+                        persist_directory=str(settings.persist_path),
+                    )
+                else:
+                    self.vectorstore = Chroma.from_texts(
+                        texts=chunks,
+                        embedding=self.embeddings,
+                        metadatas=metadatas,
+                        client_settings=self.chroma_settings,
+                    )
             else:
                 # 既存コレクションに追記
                 await self._add_chunks_to_existing_vectorstore(chunks, metadatas)
@@ -322,45 +372,43 @@ class RAGEngine:
                     ),
                     "documents": [],
                     "context_used": "",
-                    "llm_model": getattr(
-                        self.llm, "model", settings.default_model
-                    ),
+                    "llm_model": getattr(self.llm, "model", settings.default_model),
                 }
 
-            documents = await self.search_documents(
-                question, top_k, tenant=tenant
-            )
+            documents = await self.search_documents(question, top_k, tenant=tenant)
 
             if not documents:
                 return {
                     "answer": "関連する文書が見つかりませんでした。",
                     "documents": [],
                     "context_used": "",
-                    "llm_model": getattr(
-                        self.llm, "model", settings.default_model
-                    ),
+                    "llm_model": getattr(self.llm, "model", settings.default_model),
                 }
 
             # トークンベース詰め込み（質問・プロンプト・出力上限を考慮した残り枠に収める）
             model_for_encoding = model or getattr(
-                self.llm, "model", settings.default_model)
+                self.llm, "model", settings.default_model
+            )
             try:
                 enc = tiktoken.encoding_for_model(model_for_encoding)
             except Exception:
                 enc = tiktoken.get_encoding("cl100k_base")
 
-            context_window = getattr(
-                settings, "default_context_window_tokens", 8192)
+            context_window = getattr(settings, "default_context_window_tokens", 8192)
             prompt_overhead = getattr(settings, "prompt_overhead_tokens", 512)
 
             question_tokens = len(enc.encode(question or ""))
             fixed_prompt_tokens = prompt_overhead
 
-            used_max_out = int(max_output_tokens) if max_output_tokens is not None else int(
-                settings.default_max_output_tokens)
+            used_max_out = (
+                int(max_output_tokens)
+                if max_output_tokens is not None
+                else int(settings.default_max_output_tokens)
+            )
 
             remaining_input_budget = max(
-                0, context_window - fixed_prompt_tokens - question_tokens - used_max_out)
+                0, context_window - fixed_prompt_tokens - question_tokens - used_max_out
+            )
 
             selected_parts = self._select_context_parts(
                 documents, enc, remaining_input_budget
@@ -368,9 +416,12 @@ class RAGEngine:
 
             context = self._format_documents(selected_parts)
 
-            if model is not None or temperature is not None or max_output_tokens is not None:
-                llm, used_model = self._get_llm(
-                    model, temperature, max_output_tokens)
+            if (
+                model is not None
+                or temperature is not None
+                or max_output_tokens is not None
+            ):
+                llm, used_model = self._get_llm(model, temperature, max_output_tokens)
             else:
                 llm = self.llm
                 used_model = getattr(
@@ -444,8 +495,7 @@ class RAGEngine:
                         clipped = enc.decode(ids[:remaining])
                     except Exception:
                         avg_chars_per_token = 4
-                        clipped = part[: max(
-                            0, remaining * avg_chars_per_token)]
+                        clipped = part[: max(0, remaining * avg_chars_per_token)]
                     if clipped:
                         selected_parts.append(clipped)
                         used_tokens = remaining_input_budget
@@ -542,8 +592,7 @@ class RAGEngine:
             conditions = [{"file_id": {"$eq": file_id}}]
             if tenant is not None:
                 conditions.append({"tenant": {"$eq": tenant}})
-            where = {"$and": conditions} if len(
-                conditions) > 1 else conditions[0]
+            where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
 
             results = collection.get(where=where, include=["metadatas"])
             ids = results.get("ids") or []
