@@ -4,6 +4,8 @@ import json
 import hashlib
 import datetime as dt
 import asyncio
+from uuid import uuid4
+import hashlib
 
 import re
 import urllib.request
@@ -433,6 +435,46 @@ async def docs_ask(
         "status": "ok",
     }
     print(json.dumps(log, ensure_ascii=False))
+
+    message_id = question_req.message_id or str(uuid4()).replace("-", "")
+    client_id = (
+        question_req.client_id
+        or hashlib.sha256((request.client.host or "").encode()).hexdigest()[:16]
+    )
+    doc_count = len(documents_items)
+    zero_hit = 1 if doc_count == 0 else 0
+
+    rc = _get_redis()
+    jst = dt.datetime.now(dt.timezone(dt.timezone(dt.timedelta(hours=9))))
+    day = jst.strftime("%Y-%m-%d")
+    if rc:
+        pipe = rc.pipeline()
+        pipe.incr(f"metrics:{day}:{tenant}:count", 1)
+        pipe.pfadd(f"hll:{day}:{tenant}:clients", client_id)
+        pipe.incrbyfloat(f"tokens:{day}:{tenant}", float(input_tokens + output_tokens))
+        pipe.hincrby(f"docs:{day}:{tenant}", "zero_hit", zero_hit)
+        pipe.hincrby(f"docs:{day}:{tenant}", "hit", 1 - zero_hit)
+        for d in documents_items[:10]:
+            fid = d.metadata.get("file_id") or d.metadata.get("source") or "unknown"
+            pipe.hincrby(f"docs_top:{day}:{tenant}", fid, 1)
+        pipe.lpush(
+            f"logs:ask:{tenant}",
+            json.dumps(
+                {
+                    "ts": int(time.time()),
+                    "tenant": tenant,
+                    "message_id": message_id,
+                    "event": "ask",
+                    "tokens": int(input_tokens + output_tokens),
+                    "cost_jpy": round(est_cost, 4),
+                    "doc_count": doc_count,
+                    "status": "ok",
+                },
+                ensure_ascii=False,
+            ),
+        )
+        pipe.ltrim(f"logs:ask:{tenant}", 0, 1000)
+        pipe.execute()
 
     # SSE or JSON
     accept = request.headers.get("accept", "").lower() if request else ""
