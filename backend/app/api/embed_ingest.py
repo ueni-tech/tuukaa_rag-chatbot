@@ -445,7 +445,7 @@ async def docs_ask(
     zero_hit = 1 if doc_count == 0 else 0
 
     rc = _get_redis()
-    jst = dt.datetime.now(dt.timezone(dt.timezone(dt.timedelta(hours=9))))
+    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
     if rc:
         pipe = rc.pipeline()
