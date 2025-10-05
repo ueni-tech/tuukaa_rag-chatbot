@@ -329,7 +329,7 @@ export default function ChatPage() {
                           className="p-2 bg-secondary rounded-md"
                         >
                           <p className="font-medium truncate">
-                            {doc.metadata?.souce || `文書 ${docIndex + 1}`}
+                            {doc.metadata?.filename || `文書 ${docIndex + 1}`}
                           </p>
                           <p className="line-clamp-3">{doc.content}</p>
                         </div>

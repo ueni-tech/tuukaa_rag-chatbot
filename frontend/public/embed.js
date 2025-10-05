@@ -956,7 +956,7 @@
           },
           body: JSON.stringify({
             question: q,
-            top_k: 2,
+            top_k: 5,
             client_id: clientId,
             session_id: sessionId,
             message_id: messageId,

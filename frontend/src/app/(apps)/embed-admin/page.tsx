@@ -231,6 +231,7 @@ export default function EmbedAdminApp() {
       })
       const data = await list.json()
       setFiles(data?.files || [])
+      setTargetUrl('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (e: any) {
       toast.error(e?.message || 'アップロードに失敗しました')

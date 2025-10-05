@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       headers,
       body: JSON.stringify({
         question: question,
-        top_k: typeof top_k === 'number' ? top_k : 2,
+        top_k: typeof top_k === 'number' ? top_k : 5,
         model: model || undefined,
         max_output_tokens:
           typeof max_output_tokens === 'number' ? max_output_tokens : undefined,
