@@ -28,6 +28,10 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  buildClientReportEmail,
+  ReportSummary,
+} from '@/lib/buildClientReportEmail'
 
 type TenantInfo = { name: string; key: string }
 type FileInfo = {
@@ -50,6 +54,11 @@ export default function EmbedAdminApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [generatedKey, setGeneratedKey] = useState<string>('')
   const [openGenerate, setOpenGenerate] = useState(false)
+  const [from, setFrom] = useState<string>('2025-01-01')
+  const [to, setTo] = useState<string>('2025-01-31')
+  const [report, setReport] = useState<ReportSummary | null>(null)
+  const [reportHtml, setReportHtml] = useState<string>('')
+  const [loadingReport, setLoadingReport] = useState(false)
 
   useEffect(() => {
     const loadTenants = async () => {
@@ -253,6 +262,53 @@ export default function EmbedAdminApp() {
     }
   }
 
+  async function loadReport() {
+    if (!selectedTenant) return
+    setLoadingReport(true)
+    try {
+      const qs = new URLSearchParams({
+        tenant: selectedTenant,
+        start: from,
+        end: to,
+      })
+      const res = await fetch(
+        `/api/embed-admin/reports/summary?${qs.toString()}`,
+        { cache: 'no-store' }
+      )
+      if (!res.ok) throw new Error('レポート取得に失敗しました')
+      const data = await res.json()
+      const s: ReportSummary = {
+        period: { from, to },
+        tenant: selectedTenant,
+        questions: data.questions || 0,
+        unique_users: data.unique_users || 0,
+        resolved_rate: data.resolved_rate ?? null,
+        zero_hit_rate: data.zero_hit_rate ?? null,
+        tokens: data.tokens || 0,
+        cost_jpy: data.cost_jpy || 0,
+        top_docs: data.top_docs || [],
+      }
+      setReport(s)
+    } catch (e: any) {
+      toast.error(e?.message || 'レポート取得に失敗しました')
+    } finally {
+      setLoadingReport(false)
+    }
+  }
+
+  function buildEmailNow() {
+    if (!report) return
+    const html = buildClientReportEmail(report)
+    setReportHtml(html)
+  }
+
+  function copyEmailHtml() {
+    if (!reportHtml) return
+    navigator.clipboard
+      .writeText(reportHtml)
+      .then(() => toast.success('HTMLをコピーしました'))
+  }
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <ScrollArea className="flex-1 min-h-0 p-4">
@@ -306,7 +362,6 @@ export default function EmbedAdminApp() {
               </CollapsibleContent>
             </Collapsible>
           </Card>
-
           {/* テナント選択（常時表示） */}
           <Card className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
@@ -344,7 +399,6 @@ export default function EmbedAdminApp() {
               </div>
             </div>
           </Card>
-
           <Card className="p-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
@@ -370,7 +424,6 @@ export default function EmbedAdminApp() {
               </Button>
             </div>
           </Card>
-
           <Card className="p-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
@@ -392,7 +445,6 @@ export default function EmbedAdminApp() {
               </Button>
             </div>
           </Card>
-
           <Card className="p-4 gap-2">
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-semibold">アップロード済みファイル</h2>
@@ -439,6 +491,99 @@ export default function EmbedAdminApp() {
                     </Button>
                   </div>
                 ))}
+              </div>
+            )}
+          </Card>
+          <Card className="p-4">
+            <div className="flex flex-col md:flex-row gap-3 items-end">
+              <div className="space-y-2">
+                <Label>開始日</Label>
+                <Input
+                  type="date"
+                  value={from}
+                  onChange={e => setFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>終了日</Label>
+                <Input
+                  type="date"
+                  value={to}
+                  onChange={e => setTo(e.target.value)}
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={loadReport}
+                disabled={!selectedTenant || loadingReport}
+              >
+                {loadingReport ? '取得中...' : 'レポート取得'}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={buildEmailNow}
+                disabled={!report}
+              >
+                メール用レポート生成
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={copyEmailHtml}
+                disabled={!reportHtml}
+              >
+                HTMLをコピー
+              </Button>
+            </div>
+
+            {report && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">サマリ</div>
+                  <div>質問数: {report.questions.toLocaleString()}</div>
+                  <div>
+                    ユニーク利用者（推定）:{' '}
+                    {report.unique_users.toLocaleString()}
+                  </div>
+                  <div>
+                    解決率:{' '}
+                    {report.resolved_rate == null
+                      ? '-'
+                      : Math.round(report.resolved_rate * 100) + '%'}
+                  </div>
+                  <div>
+                    ゼロヒット率:{' '}
+                    {report.zero_hit_rate == null
+                      ? '-'
+                      : Math.round(report.zero_hit_rate * 100) + '%'}
+                  </div>
+                  <div>推定コスト: ¥{report.cost_jpy.toFixed(3)}</div>
+                  <div>
+                    総トークン: {Math.round(report.tokens).toLocaleString()}
+                  </div>
+                </div>
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">上位参照ドキュメント</div>
+                  <ul className="list-disc ml-5">
+                    {(report.top_docs || []).slice(0, 5).map(d => (
+                      <li key={d.id}>
+                        {d.id}（{d.count}件）
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {!!reportHtml && (
+                  <div className="md:col-span-2 p-3 border rounded">
+                    <div className="font-medium mb-2">
+                      メール用HTMLプレビュー
+                    </div>
+                    <div
+                      className="border rounded p-3"
+                      dangerouslySetInnerHTML={{ __html: reportHtml }}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </Card>

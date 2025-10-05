@@ -64,7 +64,7 @@ async def summary(
         # 日付オブジェトを文字列に変換
         day = d.strftime("%Y-%m-%d")
         total_q += int(rc.get(f"metrics:{day}:{tenant}:count") or 0)
-        dau += int(rc.pfcount(f"hll:{day}:{tenant}") or 0)
+        dau += int(rc.pfcount(f"hll:{day}:{tenant}:clients") or 0)
         total_tokens = float(rc.get(f"tokens:{day}:{tenant}") or 0)
         total_cost += float(rc.get(f"cost:{day}:{tenant}") or 0)
         h = rc.hgetall(f"docs:{day}:{tenant}") or {}
