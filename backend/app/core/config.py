@@ -32,9 +32,14 @@ class Settings(BaseSettings):
     # LLM設定
     default_model: str = "gpt-4o-mini"
     default_temperature: float = 0.2
-    default_top_k: int = 2
-    max_chunk_size: int = 2000
-    chunk_overlap: int = 200
+    default_top_k: int = 5
+    max_chunk_size: int = 1000
+    chunk_overlap: int = 100
+
+    # 類似度スコア閾値（ChromaのL2距離: 小さいほど類似）
+    # 推奨値: 1.5（厳しい）、2.0（バランス型・推奨）、2.5（緩い）
+    # 実際のスコア例: 関連性が高い質問で1.3-1.5程度
+    similarity_score_threshold: float = 1.8
 
     # ファイルアップロード設定
     max_file_size: int = 10 * 1024 * 1024  # 10MB
@@ -102,9 +107,7 @@ class Settings(BaseSettings):
 
     @property
     def embed_allowed_origins_list(self) -> list[str]:
-        raw = os.getenv("EMBED_ALLOWED_ORIGINS") or (
-            self.embed_allowed_origins or ""
-        )
+        raw = os.getenv("EMBED_ALLOWED_ORIGINS") or (self.embed_allowed_origins or "")
         items = [o.strip() for o in raw.split(",") if o.strip()]
         if self.debug:
             return items or ["*"]
