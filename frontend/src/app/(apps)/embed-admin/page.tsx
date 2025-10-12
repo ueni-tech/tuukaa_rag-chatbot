@@ -31,6 +31,8 @@ import { toast } from 'sonner'
 import {
   buildClientReportEmail,
   ReportSummary,
+  buildEvidenceReportEmail,
+  EvidenceSummary,
 } from '@/lib/buildClientReportEmail'
 
 type TenantInfo = { name: string; key: string }
@@ -59,6 +61,8 @@ export default function EmbedAdminApp() {
   const [report, setReport] = useState<ReportSummary | null>(null)
   const [reportHtml, setReportHtml] = useState<string>('')
   const [loadingReport, setLoadingReport] = useState(false)
+  const [evidence, setEvidence] = useState<EvidenceSummary | null>(null)
+  const [evidenceHtml, setEvidenceHtml] = useState('')
 
   useEffect(() => {
     const loadTenants = async () => {
@@ -267,29 +271,63 @@ export default function EmbedAdminApp() {
     if (!selectedTenant) return
     setLoadingReport(true)
     try {
+      // サマリーレポートとエビデンスを並行取得
       const qs = new URLSearchParams({
         tenant: selectedTenant,
         start: from,
         end: to,
       })
-      const res = await fetch(
-        `/api/embed-admin/reports/summary?${qs.toString()}`,
-        { cache: 'no-store' }
-      )
-      if (!res.ok) throw new Error('レポート取得に失敗しました')
-      const data = await res.json()
+      const [summaryRes, evidenceRes] = await Promise.all([
+        fetch(`/api/embed-admin/reports/summary?${qs.toString()}`, {
+          cache: 'no-store',
+        }),
+        fetch(`/api/embed-admin/reports/summary`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenant: selectedTenant,
+            start: from,
+            end: to,
+          }),
+        }),
+      ])
+
+      if (!summaryRes.ok) throw new Error('レポート取得に失敗しました')
+      if (!evidenceRes.ok) throw new Error('エビデンス取得に失敗しました')
+
+      const summaryData = await summaryRes.json()
+      const evidenceData = await evidenceRes.json()
+
       const s: ReportSummary = {
         period: { from, to },
         tenant: selectedTenant,
-        questions: data.questions || 0,
-        unique_users: data.unique_users || 0,
-        resolved_rate: data.resolved_rate ?? null,
-        zero_hit_rate: data.zero_hit_rate ?? null,
-        tokens: data.tokens || 0,
-        cost_jpy: data.cost_jpy || 0,
-        top_docs: data.top_docs || [],
+        questions: summaryData.questions || 0,
+        unique_users: summaryData.unique_users || 0,
+        resolved_rate: summaryData.resolved_rate ?? null,
+        zero_hit_rate: summaryData.zero_hit_rate ?? null,
+        tokens: summaryData.tokens || 0,
+        cost_jpy: summaryData.cost_jpy || 0,
+        top_docs: summaryData.top_docs || [],
       }
+
+      const e: EvidenceSummary = {
+        period: { from, to },
+        tenant: selectedTenant,
+        evidences: evidenceData.evidences || [],
+        inferred_question: evidenceData.inferred_question || [],
+        common_keywords: evidenceData.common_keywords || [],
+      }
+
       setReport(s)
+      setEvidence(e)
+
+      // HTML生成も自動で行う
+      const reportHtml = buildClientReportEmail(s)
+      const evidenceHtml = buildEvidenceReportEmail(e)
+      setReportHtml(reportHtml)
+      setEvidenceHtml(evidenceHtml)
+
+      toast.success('レポートとエビデンスを取得しました')
     } catch (e: any) {
       toast.error(e?.message || 'レポート取得に失敗しました')
     } finally {
@@ -297,17 +335,20 @@ export default function EmbedAdminApp() {
     }
   }
 
-  function buildEmailNow() {
-    if (!report) return
-    const html = buildClientReportEmail(report)
-    setReportHtml(html)
-  }
-
-  function copyEmailHtml() {
+  function copyReportHtml() {
     if (!reportHtml) return
     navigator.clipboard
       .writeText(reportHtml)
-      .then(() => toast.success('HTMLをコピーしました'))
+      .then(() => toast.success('レポートHTMLをコピーしました'))
+      .catch(() => toast.error('コピーに失敗しました'))
+  }
+
+  function copyEvidenceHtml() {
+    if (!evidenceHtml) return
+    navigator.clipboard
+      .writeText(evidenceHtml)
+      .then(() => toast.success('エビデンスHTMLをコピーしました'))
+      .catch(() => toast.error('コピーに失敗しました'))
   }
 
   return (
@@ -522,19 +563,19 @@ export default function EmbedAdminApp() {
               </Button>
               <Button
                 type="button"
-                variant="secondary"
-                onClick={buildEmailNow}
-                disabled={!report}
+                variant="outline"
+                onClick={copyReportHtml}
+                disabled={!reportHtml}
               >
-                メール用レポート生成
+                レポートHTMLコピー
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                onClick={copyEmailHtml}
-                disabled={!reportHtml}
+                onClick={copyEvidenceHtml}
+                disabled={!evidenceHtml}
               >
-                HTMLをコピー
+                エビデンスHTMLコピー
               </Button>
             </div>
 
@@ -574,14 +615,70 @@ export default function EmbedAdminApp() {
                     ))}
                   </ul>
                 </div>
-                {!!reportHtml && (
+                {evidence && (
                   <div className="md:col-span-2 p-3 border rounded">
                     <div className="font-medium mb-2">
-                      メール用HTMLプレビュー
+                      エビデンス（上位チャンク）
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(evidence.evidences || []).slice(0, 10).map((e, i) => (
+                        <div key={i} className="border rounded p-2">
+                          <div className="font-semibold">{e.title}</div>
+                          <div className="text-xs text-muted-foreground">
+                            出典: {e.source?.filename}（#{e.source?.chunk_index}
+                            ） ／ 回数: {e.hit_count}
+                          </div>
+                          <div className="mt-2 text-sm">
+                            <div className="font-medium mb-1">抜粋</div>
+                            <ul className="list-disc ml-5">
+                              {(e.excerpt || []).slice(0, 3).map((s, si) => (
+                                <li key={si}>{s}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            キーワード:{' '}
+                            {(e.keywords || []).slice(0, 5).join('、 ') || '-'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3">
+                      <div className="font-medium">推定質問</div>
+                      {(evidence.inferred_question || []).length > 0 ? (
+                        <ul className="list-disc ml-5 text-sm mt-1">
+                          {evidence.inferred_question.map((q, qi) => (
+                            <li key={qi}>{q}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">
+                          （推定不可）
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-2">
+                        共通キーワード:{' '}
+                        {(evidence.common_keywords || [])
+                          .slice(0, 10)
+                          .join('、 ') || '-'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {(!!reportHtml || !!evidenceHtml) && (
+                  <div className="md:col-span-2 p-3 border rounded">
+                    <div className="font-medium mb-2">
+                      メール用HTMLプレビュー（統合版）
                     </div>
                     <div
                       className="border rounded p-3"
-                      dangerouslySetInnerHTML={{ __html: reportHtml }}
+                      dangerouslySetInnerHTML={{
+                        __html: [reportHtml, evidenceHtml]
+                          .filter(Boolean)
+                          .join(
+                            '\n<hr style="border:none;border-top:2px solid #e5e7eb;margin:32px 0;" />\n'
+                          ),
+                      }}
                     />
                   </div>
                 )}
