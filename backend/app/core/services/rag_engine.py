@@ -642,6 +642,43 @@ class RAGEngine:
         except Exception as e:
             raise RuntimeError(f"ドキュメント一覧の取得に失敗しました: {str(e)}")
 
+    async def get_chunks_by_file_and_index(
+        self,
+        pairs: list(tuple[str, int]),
+        tenant: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """(file_id, chunk_index)の組みでチャンクを取得
+
+        Args:
+            pairs: (file_id, chunk_index)のリスト
+            tenant: テナント（メタデータの格納）
+
+        Return:
+            各チャンクの{"content": str, "metadata": dict}のリスト
+        """
+        if not self.vectorstore:
+            raise RuntimeError("ベクトルストアが初期化されていません")
+
+        collection = self.vectorstore._collection
+        results: list[dict[str, Any]] = []
+        for file_id, chunk_index in pairs:
+            try:
+                conditions = [
+                    {"file_id": {"$eq": file_id}},
+                    {"chunk_index": {"$eq": int(chunk_index)}},
+                ]
+                if tenant is not None:
+                    conditions.append({"tenant": {"$eq": tenant}})
+                where = {"$and": conditions}
+                got = collection.get(where=where, include=["documents", "metadatas"])
+                docs = got.get("documents") or []
+                metas = got.get("metadatas") or []
+                if docs and metas:
+                    results.append({"content": docs[0], "metadata": metas[0]})
+            except Exception:
+                continue
+        return results
+
     async def delete_document_by_file_id(
         self, file_id: str, tenant: str | None = None
     ) -> dict[str, Any]:

@@ -457,6 +457,9 @@ async def docs_ask(
         for d in documents_items[:10]:
             fid = d.metadata.get("file_id") or d.metadata.get("source") or "unknown"
             pipe.hincrby(f"docs_top:{day}:{tenant}", fid, 1)
+            cidx = d.metadata.get("chunk_index")
+            if cidx is not None:
+                pipe.hincrby(f"chunks_top:{day}:{tenant}", f"{fid}:{cidx}", 1)
         pipe.lpush(
             f"logs:ask:{tenant}",
             json.dumps(
