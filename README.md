@@ -96,6 +96,34 @@ curl -X POST "http://localhost:8000/api/v1/pdf/ask" \
 - **リバースプロキシ**: 将来的に Nginx 対応予定
 - **環境管理**: .env + pydantic-settings
 
+## セキュリティ
+
+### 脆弱性スキャン
+
+プロジェクトの依存関係に脆弱性がないか定期的にチェックしてください：
+
+```bash
+# 自動スキャン（バックエンド + フロントエンド）
+./scripts/security-check.sh
+
+# 手動スキャン
+cd backend && poetry run safety check
+cd frontend && npm run audit:production
+```
+
+詳細は[セキュリティガイド](docs/SECURITY.md)を参照してください。
+
+### デプロイ前チェックリスト
+
+本番環境へのデプロイ前に以下を確認してください：
+
+- [ ] 環境変数が適切に設定されている（`.env.example`参照）
+- [ ] `DEBUG=false`に設定されている
+- [ ] 強力なシークレットが設定されている（32 文字以上）
+- [ ] CORS 設定がホワイトリスト方式になっている
+- [ ] 依存関係の脆弱性スキャンを実行した
+- [ ] Redis に認証が設定されている
+
 ## 開発者向け情報
 
 ### ローカル開発（個別起動）
