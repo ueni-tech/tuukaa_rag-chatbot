@@ -397,29 +397,32 @@ async def docs_ask(
         jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
 
     est_cost = input_tokens * jpy_in + output_tokens * jpy_out
-    rc = _get_redis()
-    if rc:
-        key = f"cost:{day}:{tenant}"
-        used = float(rc.get(key) or 0.0)
-        if (
-            settings.daily_budget_jpy > 0
-            and used + est_cost > settings.daily_budget_jpy
-        ):
-            raise HTTPException(402, "本日の使用上限に達しました")
-        pipe = rc.pipeline()
-        pipe.incrbyfloat(key, est_cost)
-        pipe.ttl(key)
-        _, ttl = pipe.execute()
-        if ttl == -1:
-            rc.expire(key, _second_until_next_jst_midnight(jst))
-    else:
-        used = _cost.get((day, tenant), 0.0)
-        if (
-            settings.daily_budget_jpy > 0
-            and used + est_cost > settings.daily_budget_jpy
-        ):
-            raise HTTPException(402, "本日の予算を超過しました")
-        _cost[(day, tenant)] = used + est_cost
+
+    # コスト記録（管理者の場合はスキップ）
+    if not is_admin:
+        rc = _get_redis()
+        if rc:
+            key = f"cost:{day}:{tenant}"
+            used = float(rc.get(key) or 0.0)
+            if (
+                settings.daily_budget_jpy > 0
+                and used + est_cost > settings.daily_budget_jpy
+            ):
+                raise HTTPException(402, "本日の使用上限に達しました")
+            pipe = rc.pipeline()
+            pipe.incrbyfloat(key, est_cost)
+            pipe.ttl(key)
+            _, ttl = pipe.execute()
+            if ttl == -1:
+                rc.expire(key, _second_until_next_jst_midnight(jst))
+        else:
+            used = _cost.get((day, tenant), 0.0)
+            if (
+                settings.daily_budget_jpy > 0
+                and used + est_cost > settings.daily_budget_jpy
+            ):
+                raise HTTPException(402, "本日の予算を超過しました")
+            _cost[(day, tenant)] = used + est_cost
 
     # JSON ログ
     def _hash(v: str) -> str:
@@ -444,40 +447,44 @@ async def docs_ask(
     doc_count = len(documents_items)
     zero_hit = 1 if doc_count == 0 else 0
 
-    rc = _get_redis()
-    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
-    day = jst.strftime("%Y-%m-%d")
-    if rc:
-        pipe = rc.pipeline()
-        pipe.incr(f"metrics:{day}:{tenant}:count", 1)
-        pipe.pfadd(f"hll:{day}:{tenant}:clients", client_id)
-        pipe.incrbyfloat(f"tokens:{day}:{tenant}", float(input_tokens + output_tokens))
-        pipe.hincrby(f"docs:{day}:{tenant}", "zero_hit", zero_hit)
-        pipe.hincrby(f"docs:{day}:{tenant}", "hit", 1 - zero_hit)
-        for d in documents_items[:10]:
-            fid = d.metadata.get("file_id") or d.metadata.get("source") or "unknown"
-            pipe.hincrby(f"docs_top:{day}:{tenant}", fid, 1)
-            cidx = d.metadata.get("chunk_index")
-            if cidx is not None:
-                pipe.hincrby(f"chunks_top:{day}:{tenant}", f"{fid}:{cidx}", 1)
-        pipe.lpush(
-            f"logs:ask:{tenant}",
-            json.dumps(
-                {
-                    "ts": int(time.time()),
-                    "tenant": tenant,
-                    "message_id": message_id,
-                    "event": "ask",
-                    "tokens": int(input_tokens + output_tokens),
-                    "cost_jpy": round(est_cost, 4),
-                    "doc_count": doc_count,
-                    "status": "ok",
-                },
-                ensure_ascii=False,
-            ),
-        )
-        pipe.ltrim(f"logs:ask:{tenant}", 0, 1000)
-        pipe.execute()
+    # Redis集計（管理者の場合はスキップ）
+    if not is_admin:
+        rc = _get_redis()
+        jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+        day = jst.strftime("%Y-%m-%d")
+        if rc:
+            pipe = rc.pipeline()
+            pipe.incr(f"metrics:{day}:{tenant}:count", 1)
+            pipe.pfadd(f"hll:{day}:{tenant}:clients", client_id)
+            pipe.incrbyfloat(
+                f"tokens:{day}:{tenant}", float(input_tokens + output_tokens)
+            )
+            pipe.hincrby(f"docs:{day}:{tenant}", "zero_hit", zero_hit)
+            pipe.hincrby(f"docs:{day}:{tenant}", "hit", 1 - zero_hit)
+            for d in documents_items[:10]:
+                fid = d.metadata.get("file_id") or d.metadata.get("source") or "unknown"
+                pipe.hincrby(f"docs_top:{day}:{tenant}", fid, 1)
+                cidx = d.metadata.get("chunk_index")
+                if cidx is not None:
+                    pipe.hincrby(f"chunks_top:{day}:{tenant}", f"{fid}:{cidx}", 1)
+            pipe.lpush(
+                f"logs:ask:{tenant}",
+                json.dumps(
+                    {
+                        "ts": int(time.time()),
+                        "tenant": tenant,
+                        "message_id": message_id,
+                        "event": "ask",
+                        "tokens": int(input_tokens + output_tokens),
+                        "cost_jpy": round(est_cost, 4),
+                        "doc_count": doc_count,
+                        "status": "ok",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            pipe.ltrim(f"logs:ask:{tenant}", 0, 1000)
+            pipe.execute()
 
     # SSE or JSON
     accept = request.headers.get("accept", "").lower() if request else ""
@@ -562,37 +569,45 @@ async def docs_delete(
 async def docs_feedback(
     payload: FeedbackRequest,
     x_embed_key: str | None = Header(default=None, convert_underscores=True),
+    x_admin_api_secret: str | None = Header(default=None, convert_underscores=True),
 ):
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
+
+    is_admin = bool(
+        x_admin_api_secret
+        and x_admin_api_secret == getattr(settings, "admin_api_secret", None)
+    )
 
     resolved = payload.resolved
     message_id = payload.message_id
     if not message_id:
         raise HTTPException(400, "message_id は必須です")
 
-    rc = _get_redis()
-    jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
-    day = jst.strftime("%Y-%m-%d")
-    if rc:
-        rc.hincrby(f"feedback:{day}:{tenant}", "yes" if resolved else "no", 1)
-        rc.lpush(
-            f"logs:feedback:{tenant}",
-            json.dumps(
-                {
-                    "ts": int(time.time()),
-                    "tenant": tenant,
-                    "message_id": message_id,
-                    "event": "feedback",
-                    "resolved": resolved,
-                    "client_id": payload.client_id,
-                    "session_id": payload.session_id,
-                },
-                ensure_ascii=False,
-            ),
-        )
-        rc.ltrim(f"logs:feedback:{tenant}", 0, 1000)
+    # Redis集計（管理者の場合はスキップ）
+    if not is_admin:
+        rc = _get_redis()
+        jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+        day = jst.strftime("%Y-%m-%d")
+        if rc:
+            rc.hincrby(f"feedback:{day}:{tenant}", "yes" if resolved else "no", 1)
+            rc.lpush(
+                f"logs:feedback:{tenant}",
+                json.dumps(
+                    {
+                        "ts": int(time.time()),
+                        "tenant": tenant,
+                        "message_id": message_id,
+                        "event": "feedback",
+                        "resolved": resolved,
+                        "client_id": payload.client_id,
+                        "session_id": payload.session_id,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            rc.ltrim(f"logs:feedback:{tenant}", 0, 1000)
     return {"status": "ok"}
 
 

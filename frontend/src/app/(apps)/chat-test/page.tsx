@@ -394,7 +394,7 @@ export default function ChatPage() {
               <Label className="whitespace-nowrap">top_k: {topK}</Label>
               <Slider
                 min={1}
-                max={10}
+                max={20}
                 step={1}
                 value={[topK]}
                 onValueChange={v => setTopK(v[0] ?? 3)}

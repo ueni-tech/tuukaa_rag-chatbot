@@ -23,8 +23,9 @@ export async function POST(req: Request) {
       'Content-Type': 'application/json',
     }
     if (embedKey) headers['x-embed-key'] = String(embedKey)
-    if (adminSecret && serverConfig.adminApiSecret)
+    if (adminSecret && serverConfig.adminApiSecret) {
       headers['x-admin-api-secret'] = String(serverConfig.adminApiSecret)
+    }
 
     const askResponse = await fetch(url, {
       method: 'POST',
