@@ -7,13 +7,22 @@
 git clone <repository-url>
 cd tuukaa
 
-# 環境変数の設定
+# 環境変数の設定（開発環境用の最小構成）
 cat > .env << EOF
 OPENAI_API_KEY=your_actual_api_key_here
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_APP_NAME=tuukaa
+DEBUG=true
 EOF
 ```
+
+**⚠️ 本番環境の設定は必ず以下のドキュメントを参照してください:**
+
+- [セキュリティガイド](docs/SECURITY.md) - デプロイ前チェックリスト
+- [バックエンド環境変数テンプレート](docs/env.example) - バックエンドの環境変数設定
+- [フロントエンド環境変数テンプレート](docs/frontend.env.local.example) - フロントエンドの環境変数設定
+- [環境変数移行ガイド](docs/ENV_MIGRATION.md) - 既存の.env.example からの移行方法
+- [フロントエンド環境変数ガイド](docs/FRONTEND_ENV.md) - フロントエンド設定の詳細
 
 ### 2. サービス起動（Docker Compose）
 

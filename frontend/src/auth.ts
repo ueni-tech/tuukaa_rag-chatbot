@@ -62,3 +62,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   secret: process.env.AUTH_SECRET,
 })
+
+// 起動時の必須環境変数チェック
+if (!process.env.AUTH_SECRET) {
+  throw new Error('AUTH_SECRET is required')
+}
+if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  throw new Error('Google OAuth credentials are required')
+}

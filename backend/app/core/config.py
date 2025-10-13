@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # ファイルアップロード設定
     max_file_size: int = 10 * 1024 * 1024  # 10MB
-    allowed_extensions: list[str] = ["pdf"]
+    allowed_extensions: str = "pdf"
     upload_directory: str = "./uploads"
 
     # ===== Embed Domain =====
@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     admin_api_secret: str | None = None
 
     # ==== Redis設定 ====
-    redis_url: str | None = "redis://localhost:6379/0"
+    redis_password: str | None = None
+    redis_url: str | None = None
 
     # === 料金・トークン上限 ===
     model_pricing: str | None = None  # 例: "gpt-4o-mini:0.002,gpt-4o:0.006"
@@ -69,6 +70,9 @@ class Settings(BaseSettings):
     default_context_window_tokens: int = 8192
     # システム/指示/テンプレート固定分として見込むオーバーヘッド
     prompt_overhead_tokens: int = 512
+
+    # 本番環境用セキュリティ設定
+    allowed_hosts: str = "localhost,127.0.0.1"
 
     class ConfigDict:
         env_file = ".env"
@@ -177,6 +181,45 @@ class Settings(BaseSettings):
             if name and vals is not None:
                 mapping[name] = vals
         return mapping
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        """許可するホストのリストを取得"""
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def allowed_extensions_list(self) -> list[str]:
+        """許可する拡張子のリストを取得"""
+        return [e.strip() for e in self.allowed_extensions.split(",") if e.strip()]
+
+    @property
+    def redis_connection_url(self) -> str:
+        """Redis接続URLを取得（パスワード対応）"""
+        if self.redis_url:
+            return self.redis_url
+
+        # REDIS_URLが未設定の場合、パスワードから構築
+        if self.redis_password:
+            return f"redis://:{self.redis_password}@redis:6379/0"
+        else:
+            return "redis://redis:6379/0"
+
+    def model_post_init(self, __context):
+        """本番環境での必須チェック"""
+        if not self.debug:
+            # 必須環境変数のチェック
+            if not self.openai_api_key:
+                raise ValueError("OPENAI_API_KEY is required in production")
+            if not self.admin_api_secret:
+                raise ValueError("ADMIN_API_SECRET is required in production")
+
+            # シークレットの強度チェック
+            if len(self.admin_api_secret) < 32:
+                raise ValueError("ADMIN_API_SECRET must be at least 32 characters")
+
+            # CORS設定のチェック
+            if not self.embed_allowed_origins:
+                raise ValueError("EMBED_ALLOWED_ORIGINS must be set in production")
 
 
 settings = Settings()

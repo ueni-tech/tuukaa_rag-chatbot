@@ -14,6 +14,7 @@ except ImportError:
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .api import router as api_router
 from .core.config import settings
@@ -53,6 +54,27 @@ async def lifespan(app: FastAPI):
     logger.info("アプリケーション終了中...")
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """セキュリティヘッダーを追加するミドルウェア"""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        # 基本的なセキュリティヘッダー
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # 本番環境のみの追加ヘッダー
+        if not settings.debug:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+            response.headers["Content-Security-Policy"] = "default-src 'self'"
+
+        return response
+
+
 def create_app() -> FastAPI:
     """FastAPIアプリケーションを作成
     Returns:
@@ -87,10 +109,13 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
+    # セキュリティヘッダー（全環境で適用）
+    app.add_middleware(SecurityHeadersMiddleware)
+
     # セキュリティ設定
     if not settings.debug:
         app.add_middleware(
-            TrustedHostMiddleware, allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
+            TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list
         )
 
     app.include_router(api_router, prefix="/api/v1")

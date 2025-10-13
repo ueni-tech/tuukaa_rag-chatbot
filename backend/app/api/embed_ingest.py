@@ -113,7 +113,7 @@ def _second_until_next_jst_midnight(now: dt.datetime | None = None) -> int:
 
 
 def _get_redis() -> Redis | None:
-    url = getattr(settings, "redis_url", None) or os.getenv("REDIS_URL")
+    url = settings.redis_connection_url
     if not url:
         return None
     try:
