@@ -646,7 +646,6 @@
         document.head.appendChild(s)
       })
     }
-    // pre-load in background (ignore errors -> fallback renderer will be used)
     loadScript(MARKED_URL).catch(() => {})
     loadScript(PURIFY_URL).catch(() => {})
 
@@ -661,16 +660,13 @@
 
     function preprocessMarkdown(text) {
       let s = String(text || '')
-      // unwrap full fenced block like ```markdown ... ``` or ```md ... ```
       s = s
         .trim()
         .replace(/^```\s*(?:markdown|md)\s*\n([\s\S]*?)\n```\s*$/i, '$1')
-      // drop leading label line 'markdown' or 'md'
       s = s.replace(/^(?:markdown|md)\s*\n/i, '')
       return s
     }
 
-    // Fallback simple renderer (used until libraries are available or if blocked by CSP)
     function simpleRenderMarkdown(md) {
       let s = preprocessMarkdown(md)
       s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -738,7 +734,6 @@
       wrap.className = 'msg ' + (role === 'user' ? 'user' : 'ai')
       const b = document.createElement('div')
       b.className = 'bubble'
-      // For user messages, preserve line breaks
       if (role === 'user') {
         b.innerHTML = html.replace(/\n/g, '<br>')
       } else {
@@ -828,7 +823,6 @@
             showRetry: true,
           }
         default:
-          // Try to parse error message from response
           let errorMsg = 'エラーが発生しました。もう一度お試しください。'
           try {
             const errorData = JSON.parse(responseText)
@@ -846,6 +840,31 @@
             showRetry: true,
           }
       }
+    }
+
+    function renderFeedback(bubbleEl, apiBase, key, messageId) {
+      const wrap = document.createElement('div')
+      wrap.style.marginTop = '8px'
+      wrap.innerHTML = `
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:12px;color:#718096">この回答は役に立ちましたか？</span>
+          <button class="retry-btn">はい</button>
+          <button class="retry-btn" style="background:#6b7280">いいえ</button>
+        </div>`
+      const [yesBtn, noBtn] = wrap.querySelectorAll('button')
+      const send = async resolved => {
+        try {
+          await fetch(`${apiBase}/api/v1/embed/docs/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-embed-key': key },
+            body: JSON.stringify({ message_id: messageId, resolved }),
+          })
+        } catch {}
+        wrap.innerHTML = `<span style="font-size:12px;color:#718096">ご回答ありがとうございました</span>`
+      }
+      yesBtn.onclick = () => send(true)
+      noBtn.onclick = () => send(false)
+      bubbleEl.appendChild(wrap)
     }
 
     const key = host.getAttribute(ATTR_KEY) || ''
@@ -903,6 +922,30 @@
         } catch {}
       }, FIRST_BYTE_TIMEOUT_MS)
 
+      // 匿名 client_id と session_id の生成・維持（localStorage）
+      const CID_KEY = 'tuukaa:client_id'
+      const SID_KEY = 'tuukaa:session_id'
+      function getOrCreateId(k) {
+        try {
+          let v = localStorage.getItem(k)
+          if (!v) {
+            v =
+              (crypto.randomUUID && crypto.randomUUID().replace(/-/g, '')) ||
+              Math.random().toString(36).slice(2)
+            localStorage.setItem(k, v)
+          }
+          return v
+        } catch {
+          return Math.random().toString(36).slice(2)
+        }
+      }
+      let clientId = getOrCreateId(CID_KEY)
+      let sessionId = getOrCreateId(SID_KEY)
+
+      const messageId =
+        (crypto.randomUUID && crypto.randomUUID().replace(/-/g, '')) ||
+        String(Date.now())
+
       try {
         const res = await fetch(`${apiBase}/api/v1/embed/docs/ask`, {
           method: 'POST',
@@ -911,7 +954,13 @@
             Accept: 'text/event-stream',
             'x-embed-key': key,
           },
-          body: JSON.stringify({ question: q, top_k: 2 }),
+          body: JSON.stringify({
+            question: q,
+            top_k: 10,
+            client_id: clientId,
+            session_id: sessionId,
+            message_id: messageId,
+          }),
           signal,
         })
 
@@ -958,6 +1007,7 @@
             }
           }
           clearTimers()
+          renderFeedback(aiBubble, apiBase, key, messageId)
         } else if (!res.ok) {
           typing.remove()
           const responseText = await res.text().catch(() => '')
@@ -973,7 +1023,9 @@
           const json = await res.json().catch(() => ({}))
           const answer = json && json.answer ? String(json.answer) : ''
           const html = renderMarkdown(answer)
-          appendMessage('ai', html)
+          const bubble = appendMessage('ai', html)
+          // フィードバックUIを表示
+          renderFeedback(bubble, apiBase, key, messageId)
         }
       } catch (e) {
         typing.remove()
@@ -1004,9 +1056,7 @@
           )
         }
       } finally {
-        // タイマー後始末
         clearTimers()
-        // UI reset only if this call is the latest
         if (currentController === controller) {
           currentController = null
           sendBtn.disabled = false
@@ -1016,7 +1066,6 @@
       }
     }
 
-    // Remove auto-resize functionality since we want fixed height
 
     sendBtn.addEventListener('click', () => {
       const q = (textarea.value || '').trim()
@@ -1033,13 +1082,10 @@
       }
     })
 
-    // Pointer cursor when hovering over the scrollbar area (heuristic)
-    // Compute if mouse is within 12px from the right edge of the textarea's content box
     function updateScrollbarCursor(e) {
       const rect = textarea.getBoundingClientRect()
       const dx = rect.right - e.clientX
-      const nearScrollbar = dx >= 0 && dx <= 12 // heuristic width including overlay scrollbars
-      // Only when overflow-y is scrollable and content exceeds height
+      const nearScrollbar = dx >= 0 && dx <= 12
       const scrollable = textarea.scrollHeight > textarea.clientHeight
       textarea.style.cursor = nearScrollbar && scrollable ? 'pointer' : 'text'
     }
@@ -1048,7 +1094,6 @@
       textarea.style.cursor = 'text'
     })
 
-    // toggle open/close
     let open = false
     function setOpen(v) {
       open = !!v

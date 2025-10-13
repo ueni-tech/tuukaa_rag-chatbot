@@ -4,6 +4,8 @@ import json
 import hashlib
 import datetime as dt
 import asyncio
+from uuid import uuid4
+import hashlib
 
 import re
 import urllib.request
@@ -40,6 +42,7 @@ from ..models.schemas import (
     SystemInfoResponse,
     UrlRequest,
     GenericUploadResponse,
+    FeedbackRequest,
 )
 
 router = APIRouter(prefix="/embed/docs", tags=["EmbedDocs"])
@@ -239,8 +242,7 @@ async def ingest_url(
 
     chunk_size = p.chunk_size or settings.max_chunk_size
     chunk_overlap = p.chunk_overlap or settings.chunk_overlap
-    chunks = dp.split_text(text, chunk_size=chunk_size,
-                           chunk_overlap=chunk_overlap)
+    chunks = dp.split_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
     res = await rag.create_vectorstore_from_chunks(
         chunks, filename=p.url, tenant=tenant, source_type="url", source=p.url
@@ -258,8 +260,7 @@ async def docs_search(
     if not tenant:
         raise HTTPException(401, "無効な埋め込みキーです")
     docs = await rag.search_documents(req.question, req.top_k, tenant=tenant)
-    items = [DocumentInfo(content=d.page_content,
-                          metadata=d.metadata) for d in docs]
+    items = [DocumentInfo(content=d.page_content, metadata=d.metadata) for d in docs]
     return SearchResponse(documents=items, query=req.question, total_found=len(items))
 
 
@@ -269,8 +270,7 @@ async def docs_ask(
     request: Request,
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=True),
-    x_admin_api_secret: str | None = Header(
-        default=None, convert_underscores=True),
+    x_admin_api_secret: str | None = Header(default=None, convert_underscores=True),
 ) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -298,8 +298,7 @@ async def docs_ask(
         jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         day = jst.strftime("%Y-%m-%d")
         # MODEL_PRICING: in/out を分離し、RAGの参照文書も入力側に加算
-        selected_model = (
-            question_req.model or settings.default_model or "").strip()
+        selected_model = (question_req.model or settings.default_model or "").strip()
         inout = settings.model_pricing_inout_map.get(selected_model)
         if inout is None:
             usd_in = usd_out = None
@@ -308,13 +307,11 @@ async def docs_ask(
         if usd_in is None:
             jpy_in = _DEF_PRICE_IN
         else:
-            jpy_in = float(usd_in) * \
-                float(getattr(settings, "usd_jpy_rate", 150.0))
+            jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
         if usd_out is None:
             jpy_out = _DEF_PRICE_OUT
         else:
-            jpy_out = float(usd_out) * \
-                float(getattr(settings, "usd_jpy_rate", 150.0))
+            jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
 
         max_out = question_req.max_output_tokens or getattr(
             settings, "default_max_output_tokens", _RESP_MAX_TOKENS
@@ -362,25 +359,29 @@ async def docs_ask(
     # tiktokenで実測（モデルは指定があればそれを使用、なければ既定）
     try:
         import tiktoken
+
         model_for_encoding = (
-            question_req.model or settings.default_model or "").strip() or "gpt-4o-mini"
+            question_req.model or settings.default_model or ""
+        ).strip() or "gpt-4o-mini"
         try:
             enc = tiktoken.encoding_for_model(model_for_encoding)
         except Exception:
             enc = tiktoken.get_encoding("cl100k_base")
         input_tokens = max(
-            1, len(enc.encode((question_req.question or "") + "\n" + (context_used or ""))))
+            1,
+            len(
+                enc.encode((question_req.question or "") + "\n" + (context_used or ""))
+            ),
+        )
         output_tokens = max(1, len(enc.encode(answer_text or "")))
     except Exception:
         # フォールバック（概算）
-        input_tokens = max(
-            1, len((question_req.question + "\n" + context_used)) // 4)
+        input_tokens = max(1, len((question_req.question + "\n" + context_used)) // 4)
         output_tokens = max(1, len(answer_text) // 4)
     jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
     day = jst.strftime("%Y-%m-%d")
     # 事後計上: in/out 単価で合計
-    selected_model = (
-        question_req.model or settings.default_model or "").strip()
+    selected_model = (question_req.model or settings.default_model or "").strip()
     inout = settings.model_pricing_inout_map.get(selected_model)
     if inout is None:
         usd_in = usd_out = None
@@ -389,38 +390,39 @@ async def docs_ask(
     if usd_in is None:
         jpy_in = _DEF_PRICE_IN
     else:
-        jpy_in = float(usd_in) * \
-            float(getattr(settings, "usd_jpy_rate", 150.0))
+        jpy_in = float(usd_in) * float(getattr(settings, "usd_jpy_rate", 150.0))
     if usd_out is None:
         jpy_out = _DEF_PRICE_OUT
     else:
-        jpy_out = float(usd_out) * \
-            float(getattr(settings, "usd_jpy_rate", 150.0))
+        jpy_out = float(usd_out) * float(getattr(settings, "usd_jpy_rate", 150.0))
 
     est_cost = input_tokens * jpy_in + output_tokens * jpy_out
-    rc = _get_redis()
-    if rc:
-        key = f"cost:{day}:{tenant}"
-        used = float(rc.get(key) or 0.0)
-        if (
-            settings.daily_budget_jpy > 0
-            and used + est_cost > settings.daily_budget_jpy
-        ):
-            raise HTTPException(402, "本日の使用上限に達しました")
-        pipe = rc.pipeline()
-        pipe.incrbyfloat(key, est_cost)
-        pipe.ttl(key)
-        _, ttl = pipe.execute()
-        if ttl == -1:
-            rc.expire(key, _second_until_next_jst_midnight(jst))
-    else:
-        used = _cost.get((day, tenant), 0.0)
-        if (
-            settings.daily_budget_jpy > 0
-            and used + est_cost > settings.daily_budget_jpy
-        ):
-            raise HTTPException(402, "本日の予算を超過しました")
-        _cost[(day, tenant)] = used + est_cost
+
+    # コスト記録（管理者の場合はスキップ）
+    if not is_admin:
+        rc = _get_redis()
+        if rc:
+            key = f"cost:{day}:{tenant}"
+            used = float(rc.get(key) or 0.0)
+            if (
+                settings.daily_budget_jpy > 0
+                and used + est_cost > settings.daily_budget_jpy
+            ):
+                raise HTTPException(402, "本日の使用上限に達しました")
+            pipe = rc.pipeline()
+            pipe.incrbyfloat(key, est_cost)
+            pipe.ttl(key)
+            _, ttl = pipe.execute()
+            if ttl == -1:
+                rc.expire(key, _second_until_next_jst_midnight(jst))
+        else:
+            used = _cost.get((day, tenant), 0.0)
+            if (
+                settings.daily_budget_jpy > 0
+                and used + est_cost > settings.daily_budget_jpy
+            ):
+                raise HTTPException(402, "本日の予算を超過しました")
+            _cost[(day, tenant)] = used + est_cost
 
     # JSON ログ
     def _hash(v: str) -> str:
@@ -436,6 +438,53 @@ async def docs_ask(
         "status": "ok",
     }
     print(json.dumps(log, ensure_ascii=False))
+
+    message_id = question_req.message_id or str(uuid4()).replace("-", "")
+    client_id = (
+        question_req.client_id
+        or hashlib.sha256((request.client.host or "").encode()).hexdigest()[:16]
+    )
+    doc_count = len(documents_items)
+    zero_hit = 1 if doc_count == 0 else 0
+
+    # Redis集計（管理者の場合はスキップ）
+    if not is_admin:
+        rc = _get_redis()
+        jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+        day = jst.strftime("%Y-%m-%d")
+        if rc:
+            pipe = rc.pipeline()
+            pipe.incr(f"metrics:{day}:{tenant}:count", 1)
+            pipe.pfadd(f"hll:{day}:{tenant}:clients", client_id)
+            pipe.incrbyfloat(
+                f"tokens:{day}:{tenant}", float(input_tokens + output_tokens)
+            )
+            pipe.hincrby(f"docs:{day}:{tenant}", "zero_hit", zero_hit)
+            pipe.hincrby(f"docs:{day}:{tenant}", "hit", 1 - zero_hit)
+            for d in documents_items[:10]:
+                fid = d.metadata.get("file_id") or d.metadata.get("source") or "unknown"
+                pipe.hincrby(f"docs_top:{day}:{tenant}", fid, 1)
+                cidx = d.metadata.get("chunk_index")
+                if cidx is not None:
+                    pipe.hincrby(f"chunks_top:{day}:{tenant}", f"{fid}:{cidx}", 1)
+            pipe.lpush(
+                f"logs:ask:{tenant}",
+                json.dumps(
+                    {
+                        "ts": int(time.time()),
+                        "tenant": tenant,
+                        "message_id": message_id,
+                        "event": "ask",
+                        "tokens": int(input_tokens + output_tokens),
+                        "cost_jpy": round(est_cost, 4),
+                        "doc_count": doc_count,
+                        "status": "ok",
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            pipe.ltrim(f"logs:ask:{tenant}", 0, 1000)
+            pipe.execute()
 
     # SSE or JSON
     accept = request.headers.get("accept", "").lower() if request else ""
@@ -514,6 +563,52 @@ async def docs_delete(
         )
 
     raise HTTPException(400, "filename と file_id を指定してください")
+
+
+@router.post("/feedback")
+async def docs_feedback(
+    payload: FeedbackRequest,
+    x_embed_key: str | None = Header(default=None, convert_underscores=True),
+    x_admin_api_secret: str | None = Header(default=None, convert_underscores=True),
+):
+    tenant = _tenant_from_key(x_embed_key)
+    if not tenant:
+        raise HTTPException(401, "無効な埋め込みキーです")
+
+    is_admin = bool(
+        x_admin_api_secret
+        and x_admin_api_secret == getattr(settings, "admin_api_secret", None)
+    )
+
+    resolved = payload.resolved
+    message_id = payload.message_id
+    if not message_id:
+        raise HTTPException(400, "message_id は必須です")
+
+    # Redis集計（管理者の場合はスキップ）
+    if not is_admin:
+        rc = _get_redis()
+        jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+        day = jst.strftime("%Y-%m-%d")
+        if rc:
+            rc.hincrby(f"feedback:{day}:{tenant}", "yes" if resolved else "no", 1)
+            rc.lpush(
+                f"logs:feedback:{tenant}",
+                json.dumps(
+                    {
+                        "ts": int(time.time()),
+                        "tenant": tenant,
+                        "message_id": message_id,
+                        "event": "feedback",
+                        "resolved": resolved,
+                        "client_id": payload.client_id,
+                        "session_id": payload.session_id,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            rc.ltrim(f"logs:feedback:{tenant}", 0, 1000)
+    return {"status": "ok"}
 
 
 @router.get("/system/info", response_model=SystemInfoResponse)

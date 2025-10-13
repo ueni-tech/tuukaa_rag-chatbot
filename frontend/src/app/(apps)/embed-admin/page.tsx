@@ -28,6 +28,12 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import {
+  buildClientReportEmail,
+  ReportSummary,
+  buildEvidenceReportEmail,
+  EvidenceSummary,
+} from '@/lib/buildClientReportEmail'
 
 type TenantInfo = { name: string; key: string }
 type FileInfo = {
@@ -50,6 +56,13 @@ export default function EmbedAdminApp() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [generatedKey, setGeneratedKey] = useState<string>('')
   const [openGenerate, setOpenGenerate] = useState(false)
+  const [from, setFrom] = useState<string>('2025-01-01')
+  const [to, setTo] = useState<string>('2025-01-31')
+  const [report, setReport] = useState<ReportSummary | null>(null)
+  const [reportHtml, setReportHtml] = useState<string>('')
+  const [loadingReport, setLoadingReport] = useState(false)
+  const [evidence, setEvidence] = useState<EvidenceSummary | null>(null)
+  const [evidenceHtml, setEvidenceHtml] = useState('')
 
   useEffect(() => {
     const loadTenants = async () => {
@@ -222,6 +235,7 @@ export default function EmbedAdminApp() {
       })
       const data = await list.json()
       setFiles(data?.files || [])
+      setTargetUrl('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (e: any) {
       toast.error(e?.message || 'アップロードに失敗しました')
@@ -251,6 +265,90 @@ export default function EmbedAdminApp() {
     } catch (e: any) {
       toast.error(e?.message || '削除に失敗しました')
     }
+  }
+
+  async function loadReport() {
+    if (!selectedTenant) return
+    setLoadingReport(true)
+    try {
+      // サマリーレポートとエビデンスを並行取得
+      const qs = new URLSearchParams({
+        tenant: selectedTenant,
+        start: from,
+        end: to,
+      })
+      const [summaryRes, evidenceRes] = await Promise.all([
+        fetch(`/api/embed-admin/reports/summary?${qs.toString()}`, {
+          cache: 'no-store',
+        }),
+        fetch(`/api/embed-admin/reports/summary`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenant: selectedTenant,
+            start: from,
+            end: to,
+          }),
+        }),
+      ])
+
+      if (!summaryRes.ok) throw new Error('レポート取得に失敗しました')
+      if (!evidenceRes.ok) throw new Error('エビデンス取得に失敗しました')
+
+      const summaryData = await summaryRes.json()
+      const evidenceData = await evidenceRes.json()
+
+      const s: ReportSummary = {
+        period: { from, to },
+        tenant: selectedTenant,
+        questions: summaryData.questions || 0,
+        unique_users: summaryData.unique_users || 0,
+        resolved_rate: summaryData.resolved_rate ?? null,
+        zero_hit_rate: summaryData.zero_hit_rate ?? null,
+        tokens: summaryData.tokens || 0,
+        cost_jpy: summaryData.cost_jpy || 0,
+        top_docs: summaryData.top_docs || [],
+      }
+
+      const e: EvidenceSummary = {
+        period: { from, to },
+        tenant: selectedTenant,
+        evidences: evidenceData.evidences || [],
+        inferred_question: evidenceData.inferred_question || [],
+        common_keywords: evidenceData.common_keywords || [],
+      }
+
+      setReport(s)
+      setEvidence(e)
+
+      // HTML生成も自動で行う
+      const reportHtml = buildClientReportEmail(s)
+      const evidenceHtml = buildEvidenceReportEmail(e)
+      setReportHtml(reportHtml)
+      setEvidenceHtml(evidenceHtml)
+
+      toast.success('レポートとエビデンスを取得しました')
+    } catch (e: any) {
+      toast.error(e?.message || 'レポート取得に失敗しました')
+    } finally {
+      setLoadingReport(false)
+    }
+  }
+
+  function copyReportHtml() {
+    if (!reportHtml) return
+    navigator.clipboard
+      .writeText(reportHtml)
+      .then(() => toast.success('レポートHTMLをコピーしました'))
+      .catch(() => toast.error('コピーに失敗しました'))
+  }
+
+  function copyEvidenceHtml() {
+    if (!evidenceHtml) return
+    navigator.clipboard
+      .writeText(evidenceHtml)
+      .then(() => toast.success('エビデンスHTMLをコピーしました'))
+      .catch(() => toast.error('コピーに失敗しました'))
   }
 
   return (
@@ -306,7 +404,6 @@ export default function EmbedAdminApp() {
               </CollapsibleContent>
             </Collapsible>
           </Card>
-
           {/* テナント選択（常時表示） */}
           <Card className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
@@ -344,7 +441,6 @@ export default function EmbedAdminApp() {
               </div>
             </div>
           </Card>
-
           <Card className="p-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
@@ -370,7 +466,6 @@ export default function EmbedAdminApp() {
               </Button>
             </div>
           </Card>
-
           <Card className="p-4">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
@@ -392,7 +487,6 @@ export default function EmbedAdminApp() {
               </Button>
             </div>
           </Card>
-
           <Card className="p-4 gap-2">
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-semibold">アップロード済みファイル</h2>
@@ -439,6 +533,155 @@ export default function EmbedAdminApp() {
                     </Button>
                   </div>
                 ))}
+              </div>
+            )}
+          </Card>
+          <Card className="p-4">
+            <div className="flex flex-col md:flex-row gap-3 items-end">
+              <div className="space-y-2">
+                <Label>開始日</Label>
+                <Input
+                  type="date"
+                  value={from}
+                  onChange={e => setFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>終了日</Label>
+                <Input
+                  type="date"
+                  value={to}
+                  onChange={e => setTo(e.target.value)}
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={loadReport}
+                disabled={!selectedTenant || loadingReport}
+              >
+                {loadingReport ? '取得中...' : 'レポート取得'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={copyReportHtml}
+                disabled={!reportHtml}
+              >
+                レポートHTMLコピー
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={copyEvidenceHtml}
+                disabled={!evidenceHtml}
+              >
+                エビデンスHTMLコピー
+              </Button>
+            </div>
+
+            {report && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">サマリ</div>
+                  <div>質問数: {report.questions.toLocaleString()}</div>
+                  <div>
+                    ユニーク利用者（推定）:{' '}
+                    {report.unique_users.toLocaleString()}
+                  </div>
+                  <div>
+                    解決率:{' '}
+                    {report.resolved_rate == null
+                      ? '-'
+                      : Math.round(report.resolved_rate * 100) + '%'}
+                  </div>
+                  <div>
+                    ゼロヒット率:{' '}
+                    {report.zero_hit_rate == null
+                      ? '-'
+                      : Math.round(report.zero_hit_rate * 100) + '%'}
+                  </div>
+                  <div>推定コスト: ¥{report.cost_jpy.toFixed(3)}</div>
+                  <div>
+                    総トークン: {Math.round(report.tokens).toLocaleString()}
+                  </div>
+                </div>
+                <div className="p-3 border rounded">
+                  <div className="font-medium mb-1">上位参照ドキュメント</div>
+                  <ul className="list-disc ml-5">
+                    {(report.top_docs || []).slice(0, 5).map(d => (
+                      <li key={d.id}>
+                        {d.id}（{d.count}件）
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                {evidence && (
+                  <div className="md:col-span-2 p-3 border rounded">
+                    <div className="font-medium mb-2">
+                      エビデンス（上位チャンク）
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(evidence.evidences || []).slice(0, 10).map((e, i) => (
+                        <div key={i} className="border rounded p-2">
+                          <div className="font-semibold">{e.title}</div>
+                          <div className="text-xs text-muted-foreground">
+                            出典: {e.source?.filename}（#{e.source?.chunk_index}
+                            ） ／ 回数: {e.hit_count}
+                          </div>
+                          <div className="mt-2 text-sm">
+                            <div className="font-medium mb-1">抜粋</div>
+                            <ul className="list-disc ml-5">
+                              {(e.excerpt || []).slice(0, 3).map((s, si) => (
+                                <li key={si}>{s}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            キーワード:{' '}
+                            {(e.keywords || []).slice(0, 5).join('、 ') || '-'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3">
+                      <div className="font-medium">推定質問</div>
+                      {(evidence.inferred_question || []).length > 0 ? (
+                        <ul className="list-disc ml-5 text-sm mt-1">
+                          {evidence.inferred_question.map((q, qi) => (
+                            <li key={qi}>{q}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">
+                          （推定不可）
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-2">
+                        共通キーワード:{' '}
+                        {(evidence.common_keywords || [])
+                          .slice(0, 10)
+                          .join('、 ') || '-'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {(!!reportHtml || !!evidenceHtml) && (
+                  <div className="md:col-span-2 p-3 border rounded">
+                    <div className="font-medium mb-2">
+                      メール用HTMLプレビュー（統合版）
+                    </div>
+                    <div
+                      className="border rounded p-3"
+                      dangerouslySetInnerHTML={{
+                        __html: [reportHtml, evidenceHtml]
+                          .filter(Boolean)
+                          .join(
+                            '\n<hr style="border:none;border-top:2px solid #e5e7eb;margin:32px 0;" />\n'
+                          ),
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </Card>

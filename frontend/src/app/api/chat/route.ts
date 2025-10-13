@@ -23,15 +23,16 @@ export async function POST(req: Request) {
       'Content-Type': 'application/json',
     }
     if (embedKey) headers['x-embed-key'] = String(embedKey)
-    if (adminSecret && serverConfig.adminApiSecret)
+    if (adminSecret && serverConfig.adminApiSecret) {
       headers['x-admin-api-secret'] = String(serverConfig.adminApiSecret)
+    }
 
     const askResponse = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         question: question,
-        top_k: typeof top_k === 'number' ? top_k : 2,
+        top_k: typeof top_k === 'number' ? top_k : 10,
         model: model || undefined,
         max_output_tokens:
           typeof max_output_tokens === 'number' ? max_output_tokens : undefined,
