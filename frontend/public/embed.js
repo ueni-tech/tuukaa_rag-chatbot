@@ -215,6 +215,7 @@
   padding: 12px 16px;
   font: inherit;
   font-size: 14px;
+  color: #2d3748;
   background: transparent;
   outline: none;
   resize: none;
@@ -852,11 +853,19 @@
           <button class="retry-btn" style="background:#6b7280">いいえ</button>
         </div>`
       const [yesBtn, noBtn] = wrap.querySelectorAll('button')
+      const isTestEnv = host.getAttribute('data-is-test') === 'true'
       const send = async resolved => {
         try {
+          const headers = {
+            'Content-Type': 'application/json',
+            'x-embed-key': key,
+          }
+          if (isTestEnv) {
+            headers['x-test-environment'] = 'true'
+          }
           await fetch(`${apiBase}/api/v1/embed/docs/feedback`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-embed-key': key },
+            headers,
             body: JSON.stringify({ message_id: messageId, resolved }),
           })
         } catch {}
@@ -869,6 +878,7 @@
 
     const key = host.getAttribute(ATTR_KEY) || ''
     const apiBase = host.getAttribute('data-api-base') || window.location.origin
+    const isTest = host.getAttribute('data-is-test') === 'true'
     // AbortController（現在のリクエストのキャンセル制御）
     let currentController = null
     // タイムアウト（初回バイト/ハートビート）
@@ -947,13 +957,18 @@
         String(Date.now())
 
       try {
+        const headers = {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          'x-embed-key': key,
+        }
+        if (isTest) {
+          headers['x-test-environment'] = 'true'
+        }
+
         const res = await fetch(`${apiBase}/api/v1/embed/docs/ask`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'text/event-stream',
-            'x-embed-key': key,
-          },
+          headers,
           body: JSON.stringify({
             question: q,
             top_k: 10,
@@ -1066,7 +1081,6 @@
       }
     }
 
-
     sendBtn.addEventListener('click', () => {
       const q = (textarea.value || '').trim()
       if (!q) return
@@ -1141,6 +1155,8 @@
     )
     const apiBase = script.getAttribute('data-api-base')
     if (apiBase) host.setAttribute('data-api-base', apiBase)
+    const isTest = script.getAttribute('data-is-test')
+    if (isTest) host.setAttribute('data-is-test', isTest)
     script.insertAdjacentElement('afterend', host)
     createWidget(host)
   })
