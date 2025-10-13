@@ -271,6 +271,7 @@ async def docs_ask(
     rag: RAGEngine = Depends(get_rag_engine),
     x_embed_key: str | None = Header(default=None, convert_underscores=True),
     x_admin_api_secret: str | None = Header(default=None, convert_underscores=True),
+    x_test_environment: str | None = Header(default=None, convert_underscores=True),
 ) -> AnswerResponse | StreamingResponse:
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -280,6 +281,9 @@ async def docs_ask(
         x_admin_api_secret
         and x_admin_api_secret == getattr(settings, "admin_api_secret", None)
     )
+
+    # テスト環境フラグをチェック（Redis集計をスキップ）
+    is_test = x_test_environment == "true"
 
     # RPM 制限
     ip = request.client.host if request and request.client else "0.0.0.0"
@@ -398,8 +402,8 @@ async def docs_ask(
 
     est_cost = input_tokens * jpy_in + output_tokens * jpy_out
 
-    # コスト記録（管理者の場合はスキップ）
-    if not is_admin:
+    # コスト記録（管理者またはテスト環境の場合はスキップ）
+    if not is_admin and not is_test:
         rc = _get_redis()
         if rc:
             key = f"cost:{day}:{tenant}"
@@ -447,8 +451,8 @@ async def docs_ask(
     doc_count = len(documents_items)
     zero_hit = 1 if doc_count == 0 else 0
 
-    # Redis集計（管理者の場合はスキップ）
-    if not is_admin:
+    # Redis集計（管理者またはテスト環境の場合はスキップ）
+    if not is_admin and not is_test:
         rc = _get_redis()
         jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         day = jst.strftime("%Y-%m-%d")
@@ -570,6 +574,7 @@ async def docs_feedback(
     payload: FeedbackRequest,
     x_embed_key: str | None = Header(default=None, convert_underscores=True),
     x_admin_api_secret: str | None = Header(default=None, convert_underscores=True),
+    x_test_environment: str | None = Header(default=None, convert_underscores=True),
 ):
     tenant = _tenant_from_key(x_embed_key)
     if not tenant:
@@ -580,13 +585,16 @@ async def docs_feedback(
         and x_admin_api_secret == getattr(settings, "admin_api_secret", None)
     )
 
+    # テスト環境フラグをチェック（Redis集計をスキップ）
+    is_test = x_test_environment == "true"
+
     resolved = payload.resolved
     message_id = payload.message_id
     if not message_id:
         raise HTTPException(400, "message_id は必須です")
 
-    # Redis集計（管理者の場合はスキップ）
-    if not is_admin:
+    # Redis集計（管理者またはテスト環境の場合はスキップ）
+    if not is_admin and not is_test:
         rc = _get_redis()
         jst = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         day = jst.strftime("%Y-%m-%d")
