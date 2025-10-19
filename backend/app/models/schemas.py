@@ -27,9 +27,9 @@ __all__ = [
 
 
 class QuestionRequest(BaseModel):
-    question: str = Field(..., min_length=1, max_length=1000, description="質問内容")
-    top_k: int | None = Field(None, ge=1, le=10, description="検索結果の上位k件")
-    model: str | None = Field(None, description="LLMモデル指定")
+    question: str = Field(..., min_length=1, max_length=2000, description="質問内容")
+    top_k: int | None = Field(None, ge=1, le=20, description="検索結果の上位k件")
+    model: str | None = Field(None, max_length=100, description="LLMモデル指定")
     temperature: float | None = Field(
         None, ge=0.0, le=0.5, description="生成温度(0.0～0.5)"
     )
@@ -37,18 +37,51 @@ class QuestionRequest(BaseModel):
         None, ge=1, le=4096, description="出力トークンの上限(見積もり用の上限)"
     )
     client_id: str | None = Field(
-        None, description="匿名クライアントID（ブラウザ単位）"
+        None, max_length=64, description="匿名クライアントID（ブラウザ単位）"
     )
     session_id: str | None = Field(
-        None, description="セッションID（30分非活動で再発行など任意運用）"
+        None,
+        max_length=64,
+        description="セッションID（30分非活動で再発行など任意運用）",
     )
-    message_id: str | None = Field(None, description="このやりとりのメッセージID")
+    message_id: str | None = Field(
+        None, max_length=64, description="このやりとりのメッセージID"
+    )
 
     @field_validator("question")
-    @staticmethod
-    def validate_question(v: str) -> str:
+    @classmethod
+    def sanitize_question(cls, v: str) -> str:
+        """質問文のサニタイゼーション: 制御文字を除去し、安全な文字列に変換"""
         if not v.strip():
             raise ValueError("質問内容を入力してください")
+        # 制御文字を除去（印字可能文字と空白文字のみ許可）
+        sanitized = "".join(char for char in v if char.isprintable() or char.isspace())
+        return sanitized.strip()
+
+    @field_validator("model")
+    @classmethod
+    def sanitize_model(cls, v: str | None) -> str | None:
+        """モデル名のサニタイゼーション: 英数字、ハイフン、アンダースコアのみ許可"""
+        if v is None:
+            return None
+        # 安全な文字のみ許可
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9\-_.]+$", v):
+            raise ValueError("モデル名に不正な文字が含まれています")
+        return v.strip()
+
+    @field_validator("client_id", "session_id", "message_id")
+    @classmethod
+    def sanitize_ids(cls, v: str | None) -> str | None:
+        """ID類のサニタイゼーション: 英数字とハイフンのみ許可"""
+        if v is None:
+            return None
+        # 安全な文字のみ許可
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9\-]+$", v):
+            raise ValueError("IDに不正な文字が含まれています")
         return v.strip()
 
 
@@ -156,7 +189,22 @@ class TenantListResponse(BaseModel):
 
 
 class FeedbackRequest(BaseModel):
-    message_id: str = Field(..., min_length=1, description="メッセージID")
+    message_id: str = Field(
+        ..., min_length=1, max_length=64, description="メッセージID"
+    )
     resolved: bool = Field(..., description="解決フラグ")
-    client_id: str | None = Field(None, description="匿名クライアントID")
-    session_id: str | None = Field(None, description="セッションID")
+    client_id: str | None = Field(None, max_length=64, description="匿名クライアントID")
+    session_id: str | None = Field(None, max_length=64, description="セッションID")
+
+    @field_validator("message_id", "client_id", "session_id")
+    @classmethod
+    def sanitize_feedback_ids(cls, v: str | None) -> str | None:
+        """ID類のサニタイゼーション: 英数字とハイフンのみ許可"""
+        if v is None:
+            return None
+        # 安全な文字のみ許可
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9\-]+$", v):
+            raise ValueError("IDに不正な文字が含まれています")
+        return v.strip()

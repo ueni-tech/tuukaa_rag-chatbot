@@ -38,6 +38,8 @@ flake8 = "7.3.0"
 httpx = "0.27.2"
 mypy = "1.17.1"
 isort = "5.13.2"
+# セキュリティスキャン
+safety = "^3.2.18"
 
 [build-system]
 requires = ["poetry-core"]

@@ -7,13 +7,22 @@
 git clone <repository-url>
 cd tuukaa
 
-# 環境変数の設定
+# 環境変数の設定（開発環境用の最小構成）
 cat > .env << EOF
 OPENAI_API_KEY=your_actual_api_key_here
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_APP_NAME=tuukaa
+DEBUG=true
 EOF
 ```
+
+**⚠️ 本番環境の設定は必ず以下のドキュメントを参照してください:**
+
+- [セキュリティガイド](docs/SECURITY.md) - デプロイ前チェックリスト
+- [バックエンド環境変数テンプレート](docs/env.example) - バックエンドの環境変数設定
+- [フロントエンド環境変数テンプレート](docs/frontend.env.local.example) - フロントエンドの環境変数設定
+- [環境変数移行ガイド](docs/ENV_MIGRATION.md) - 既存の.env.example からの移行方法
+- [フロントエンド環境変数ガイド](docs/FRONTEND_ENV.md) - フロントエンド設定の詳細
 
 ### 2. サービス起動（Docker Compose）
 
@@ -86,6 +95,34 @@ curl -X POST "http://localhost:8000/api/v1/pdf/ask" \
 - **コンテナ**: Docker + Docker Compose
 - **リバースプロキシ**: 将来的に Nginx 対応予定
 - **環境管理**: .env + pydantic-settings
+
+## セキュリティ
+
+### 脆弱性スキャン
+
+プロジェクトの依存関係に脆弱性がないか定期的にチェックしてください：
+
+```bash
+# 自動スキャン（バックエンド + フロントエンド）
+./scripts/security-check.sh
+
+# 手動スキャン
+cd backend && poetry run safety check
+cd frontend && npm run audit:production
+```
+
+詳細は[セキュリティガイド](docs/SECURITY.md)を参照してください。
+
+### デプロイ前チェックリスト
+
+本番環境へのデプロイ前に以下を確認してください：
+
+- [ ] 環境変数が適切に設定されている（`.env.example`参照）
+- [ ] `DEBUG=false`に設定されている
+- [ ] 強力なシークレットが設定されている（32 文字以上）
+- [ ] CORS 設定がホワイトリスト方式になっている
+- [ ] 依存関係の脆弱性スキャンを実行した
+- [ ] Redis に認証が設定されている
 
 ## 開発者向け情報
 

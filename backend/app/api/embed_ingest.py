@@ -113,7 +113,7 @@ def _second_until_next_jst_midnight(now: dt.datetime | None = None) -> int:
 
 
 def _get_redis() -> Redis | None:
-    url = getattr(settings, "redis_url", None) or os.getenv("REDIS_URL")
+    url = settings.redis_connection_url
     if not url:
         return None
     try:
@@ -428,18 +428,19 @@ async def docs_ask(
                 raise HTTPException(402, "本日の予算を超過しました")
             _cost[(day, tenant)] = used + est_cost
 
-    # JSON ログ
+    # JSON ログ（機密情報マスキング強化）
     def _hash(v: str) -> str:
         return hashlib.sha256(v.encode("utf-8")).hexdigest()[:16]
 
     log = {
-        "ip": ip,
+        "ip_hash": _hash(ip),  # IPアドレスもハッシュ化
         "key_hash": _hash(x_embed_key or ""),
         "tenant": tenant,
-        "question_hash": _hash(question_req.question),
+        "question_hash": _hash(question_req.question),  # 質問の実テキストは記録しない
         "tokens": input_tokens + output_tokens,
         "cost_jpy": round(est_cost, 4),
         "status": "ok",
+        "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
     print(json.dumps(log, ensure_ascii=False))
 
